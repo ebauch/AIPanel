@@ -83,7 +83,7 @@ function pickBalanced(
 
   const candidates = pool.filter((model) => {
     const ratio = model.pricing.completionPerMillion / flagshipPrice;
-    return ratio >= 0.15 && ratio <= 0.5;
+    return ratio >= 0.15 && ratio <= 0.35;
   });
 
   return sortNewestFirst(candidates, "higher-price")[0];
