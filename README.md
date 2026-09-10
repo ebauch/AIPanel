@@ -1,7 +1,7 @@
 # AI Panel
 
 A local Next.js app where you put a question to a panel of AI models and watch them
-debate it, then walk away with what they agree on. 
+debate it, then walk away with what they agree on. Fully vibe-coded but human crafted. 
 
 <img width="1260" height="827" alt="ai_panel_screenshot" src="https://github.com/user-attachments/assets/c0f0b77b-c705-43b4-883f-c739d08cd645" />
 
