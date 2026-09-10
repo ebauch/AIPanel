@@ -103,7 +103,7 @@ const TAKEAWAYS_SCHEMA_BLOCK = `## Output format
 Respond with ONLY a JSON object matching this shape, no code fences, no prose before or after:
 
 {
-  "verdict": string,               // 1-3 sentences: the single most important conclusion or recommendation
+  "verdict": string,               // ONE sentence, at most 25 words. Name the winner, the decision, or the single criterion the panel split on. Do NOT restate points that already appear in takeaways.
   "confidence": "high" | "medium" | "low", // how much the panel converged
   "takeaways": [
     {
@@ -122,7 +122,7 @@ Respond with ONLY a JSON object matching this shape, no code fences, no prose be
   ]
 }
 
-Rules: at most 8 takeaways and 4 disagreements; only include a disagreement for a genuine split, not routine variation in phrasing; in "supporters", "dissenters", and "model" fields use ONLY the model's name exactly as it appears before the parenthesis in the panel list (e.g. panel entry "GPT-5.4 Nano (Pro)" -> use "GPT-5.4 Nano", never "GPT-5.4 Nano (Pro)"); never mark a model as a supporter or dissenter unless it actually took that position.`;
+Rules: at most 8 takeaways and 4 disagreements; only include a disagreement for a genuine split, not routine variation in phrasing; in "supporters", "dissenters", and "model" fields use ONLY the model's name exactly as it appears before the parenthesis in the panel list (e.g. panel entry "GPT-5.4 Nano (Pro)" -> use "GPT-5.4 Nano", never "GPT-5.4 Nano (Pro)"); never mark a model as a supporter or dissenter unless it actually took that position; the verdict must be one sentence of at most 25 words and must not repeat takeaway content.`;
 
 /** "Anthropic: Claude Sonnet 5" -> "Claude Sonnet 5" */
 export function shortModelName(displayName: string): string {

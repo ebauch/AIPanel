@@ -550,6 +550,7 @@ export default function HomePage() {
   );
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [showDebateInResults, setShowDebateInResults] = useState(false);
+  const [verdictExpanded, setVerdictExpanded] = useState(false);
 
   const abortRef = useRef<AbortController | null>(null);
   const summaryAbortRef = useRef<AbortController | null>(null);
@@ -606,7 +607,7 @@ export default function HomePage() {
   }, [panelRoster]);
 
   const effectiveSummaryModelId =
-    summaryModelId || pickDefaultSummaryModel(selectedModelIds);
+    summaryModelId || pickDefaultSummaryModel(models, selectedModelIds);
 
   const isRunning = status === "loading" || status === "running";
   const isSummaryRunning =
@@ -1029,6 +1030,7 @@ export default function HomePage() {
         setSummaryText("");
         setTakeaways(null);
         setSummaryModelName(event.modelDisplayName);
+        setVerdictExpanded(false);
         break;
       case "summary_token":
         setSummaryText((current) => current + event.text);
@@ -1471,6 +1473,49 @@ export default function HomePage() {
     debateStartRef.current = null;
   }, []);
 
+  const handleStartFresh = useCallback(() => {
+    const hasFinishedDebate =
+      viewState === "results" || (turns.length > 0 && !isRunning);
+    if (
+      hasFinishedDebate &&
+      !window.confirm("Discard this debate and start fresh?")
+    ) {
+      return;
+    }
+
+    abortRef.current?.abort();
+    summaryAbortRef.current?.abort();
+    abortRef.current = null;
+    summaryAbortRef.current = null;
+
+    setContextBrief("");
+    setDocuments(INITIAL_DOCUMENTS.map((doc) => ({ ...doc })));
+    setStances(DEFAULT_STANCES.map((stance) => ({ ...stance })));
+    setMode("assigned_stances");
+    setReasoningEffort("high");
+    setRounds(3);
+    setIterations(3);
+    setSummarizeEnabled(true);
+    setSummaryModelId("");
+    setTurns([]);
+    turnsRef.current = [];
+    setTakeaways(null);
+    setSummaryText("");
+    setSummaryError(null);
+    setSummaryModelName(null);
+    setSummaryUsage(null);
+    setSummaryStatus("idle");
+    setPanelRoster([]);
+    panelRosterRef.current = [];
+    setStatus("idle");
+    setStatusMessage(null);
+    setElapsedSeconds(0);
+    debateStartRef.current = null;
+    setCostSoFar({ usd: 0, tokens: 0 });
+    setShowDebateInResults(false);
+    setVerdictExpanded(false);
+  }, [viewState, turns.length, isRunning]);
+
   const buildMarkdownExport = useCallback(() => {
     const lines: string[] = [];
     const now = new Date();
@@ -1801,7 +1846,40 @@ export default function HomePage() {
       )}
 
       <div className="grid gap-8 lg:grid-cols-[420px_minmax(0,1fr)]">
-        <section className="rounded-2xl bg-white ring-1 ring-black/5 dark:bg-zinc-950 lg:sticky lg:top-20 lg:flex lg:max-h-[calc(100vh-6rem)] lg:flex-col lg:overflow-y-auto lg:overscroll-contain">
+        <section className="rounded-2xl bg-white ring-1 ring-black/5 dark:bg-zinc-950 lg:sticky lg:top-[4.5rem] lg:flex lg:max-h-[calc(100vh-5.5rem)] lg:flex-col lg:overflow-y-auto lg:overscroll-contain">
+          <div className="sticky top-0 z-10 space-y-2 rounded-t-2xl border-b border-zinc-200/80 bg-white/95 px-5 py-4 backdrop-blur dark:border-zinc-800/80 dark:bg-zinc-950/95">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void startDebate()}
+                disabled={isRunning}
+                className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {status === "loading" ? "Starting…" : "Run debate"}
+              </button>
+              <button
+                type="button"
+                onClick={stopDebate}
+                disabled={!isRunning}
+                className="rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-semibold hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+              >
+                Stop
+              </button>
+              <span
+                className="shrink-0 whitespace-nowrap rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
+                title={`Rough estimate: ${formatTokenCount(costEstimate.inputTokens)} input tokens, ${formatTokenCount(costEstimate.outputTokens)} output tokens across ${estimatedTurnCount} turns. Actual cost depends on response length and reasoning.`}
+              >
+                Est. ~{formatUsd(costEstimate.totalUsd)}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleStartFresh}
+              className="text-xs text-zinc-500 hover:text-violet-600 dark:text-zinc-500 dark:hover:text-violet-400"
+            >
+              Start fresh
+            </button>
+          </div>
           <div className="space-y-6 p-5">
             <div className="space-y-4">
               <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
@@ -2213,33 +2291,6 @@ export default function HomePage() {
           </div>
             </div>
           </div>
-
-          <div className="sticky bottom-0 space-y-2 border-t border-zinc-200/80 bg-white/95 px-5 py-4 backdrop-blur dark:border-zinc-800/80 dark:bg-zinc-950/95">
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => void startDebate()}
-                disabled={isRunning}
-                className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {status === "loading" ? "Starting…" : "Run debate"}
-              </button>
-              <button
-                type="button"
-                onClick={stopDebate}
-                disabled={!isRunning}
-                className="rounded-xl border border-zinc-300 px-4 py-2.5 text-sm font-semibold hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-              >
-                Stop
-              </button>
-            </div>
-            <p
-              className="text-center text-xs text-zinc-500"
-              title={`Rough estimate: ${formatTokenCount(costEstimate.inputTokens)} input tokens, ${formatTokenCount(costEstimate.outputTokens)} output tokens across ${estimatedTurnCount} turns. Actual cost depends on response length and reasoning.`}
-            >
-              Est. ~{formatUsd(costEstimate.totalUsd)}
-            </p>
-          </div>
         </section>
 
         <section className="flex min-h-[640px] flex-col rounded-2xl bg-white ring-1 ring-black/5 dark:bg-zinc-950">
@@ -2254,9 +2305,33 @@ export default function HomePage() {
                         <p className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
                           Verdict
                         </p>
-                        <p className="max-w-[60ch] text-2xl font-semibold text-balance text-zinc-900 dark:text-zinc-50">
-                          {takeaways.verdict || "The panel did not provide a clear verdict."}
-                        </p>
+                        {(() => {
+                          const verdictText =
+                            takeaways.verdict ||
+                            "The panel did not provide a clear verdict.";
+                          const isLongVerdict = verdictText.length > 220;
+                          const clamp = isLongVerdict && !verdictExpanded;
+                          return (
+                            <>
+                              <p
+                                className={`max-w-[60ch] text-lg font-medium leading-snug text-balance text-zinc-900 dark:text-zinc-50 lg:text-xl ${
+                                  clamp ? "line-clamp-3" : ""
+                                }`}
+                              >
+                                {verdictText}
+                              </p>
+                              {clamp && (
+                                <button
+                                  type="button"
+                                  onClick={() => setVerdictExpanded(true)}
+                                  className="text-xs font-medium text-violet-600 hover:text-violet-500"
+                                >
+                                  Show full verdict
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="flex flex-wrap items-center gap-2">
                           <ConfidencePill confidence={takeaways.confidence} />
                         </div>
@@ -2404,13 +2479,22 @@ export default function HomePage() {
                     >
                       Regenerate takeaways
                     </button>
-                    <button
-                      type="button"
-                      onClick={handleEditAndRunAgain}
-                      className="ml-auto rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
-                    >
-                      Edit and run again
-                    </button>
+                    <div className="ml-auto flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleStartFresh}
+                        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                      >
+                        Start fresh
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleEditAndRunAgain}
+                        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-900"
+                      >
+                        Edit and run again
+                      </button>
+                    </div>
                   </div>
 
                   {showDebateInResults && (
