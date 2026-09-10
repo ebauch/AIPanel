@@ -2,7 +2,7 @@ import type { ReasoningEffort, TokenUsage } from "./types";
 
 export const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
-const HTTP_REFERER = "https://github.com/ai-panel";
+const HTTP_REFERER = "https://github.com/ebauch/AIPanel";
 const APP_TITLE = "AI Panel";
 const CALL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
