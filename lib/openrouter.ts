@@ -6,6 +6,7 @@ const HTTP_REFERER = "https://github.com/ebauch/AIPanel";
 const APP_TITLE = "AI Panel";
 const CALL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
 const RETRY_DELAYS_MS = [3_000, 6_000];
 
 export class OpenRouterError extends Error {
@@ -102,6 +103,8 @@ interface StreamChatCompletionOptions {
   reasoningEffort?: ReasoningEffort;
   supportsReasoningEffort?: boolean;
   responseFormatJson?: boolean;
+  /** Output cap sent as max_tokens. Keeps OpenRouter's affordability precheck realistic and bounds runaway turns. */
+  maxTokens?: number;
   signal?: AbortSignal;
   onToken?: (text: string) => void;
   onReasoning?: (text: string) => void;
@@ -144,6 +147,7 @@ async function performStreamAttempt(
     messages: options.messages,
     stream: true,
     usage: { include: true },
+    max_tokens: options.maxTokens ?? DEFAULT_MAX_OUTPUT_TOKENS,
   };
 
   if (options.reasoningEffort && options.supportsReasoningEffort) {
