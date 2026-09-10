@@ -60,6 +60,7 @@ interface TurnBlock {
   activity: string | null;
   streaming: boolean;
   usage: TokenUsage | null;
+  error: string | null;
 }
 
 interface PanelEntry {
@@ -451,7 +452,18 @@ function TurnCard({ turn }: { turn: TurnBlock }) {
         {turn.streaming && (
           <span className="text-xs text-zinc-500">streaming…</span>
         )}
+        {turn.error && (
+          <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-medium text-red-700 dark:text-red-300">
+            Skipped
+          </span>
+        )}
       </div>
+
+      {turn.error && (
+        <p className="mb-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          {turn.error}
+        </p>
+      )}
 
       {turn.reasoning && (
         <details
@@ -1284,6 +1296,7 @@ export default function HomePage() {
             text: "",
             reasoning: "",
             activity: "Starting…",
+            error: null,
             streaming: true,
             usage: null,
           },
@@ -1359,6 +1372,7 @@ export default function HomePage() {
                 activity: null,
                 streaming: false,
                 usage: event.usage ?? null,
+                error: event.error ?? null,
               };
               break;
             }

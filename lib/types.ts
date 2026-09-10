@@ -188,6 +188,8 @@ export type DebateStreamEvent =
       runId?: string;
       text: string;
       usage: TokenUsage | null;
+      /** Set when the turn was skipped after retries; text is empty. */
+      error?: string;
     }
   | { type: "round_end"; iteration: number; round: number }
   | { type: "iteration_end"; iteration: number }

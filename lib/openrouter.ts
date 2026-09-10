@@ -6,6 +6,8 @@ const HTTP_REFERER = "https://github.com/ebauch/AIPanel";
 const APP_TITLE = "AI Panel";
 const CALL_TIMEOUT_MS = 10 * 60 * 1000;
 const MAX_ATTEMPTS = 3;
+const RATE_LIMIT_MAX_ATTEMPTS = 5;
+const RATE_LIMIT_DELAYS_MS = [10_000, 20_000, 40_000, 60_000];
 const DEFAULT_MAX_OUTPUT_TOKENS = 8_192;
 const RETRY_DELAYS_MS = [3_000, 6_000];
 
@@ -103,6 +105,14 @@ interface StreamChatCompletionOptions {
   signal?: AbortSignal;
   onToken?: (text: string) => void;
   onReasoning?: (text: string) => void;
+  /** Called before each retry wait so callers can show progress. */
+  onRetry?: (info: {
+    attempt: number;
+    maxAttempts: number;
+    delayMs: number;
+    rateLimited: boolean;
+    message: string;
+  }) => void;
 }
 
 interface StreamChatCompletionResult {
@@ -300,8 +310,11 @@ export async function streamChatCompletion(
   options: StreamChatCompletionOptions,
 ): Promise<StreamChatCompletionResult> {
   let lastError: unknown;
+  let attempt = 0;
 
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+  while (true) {
+    attempt += 1;
+
     if (options.signal?.aborted) {
       throw new DOMException("Aborted", "AbortError");
     }
@@ -322,15 +335,27 @@ export async function streamChatCompletion(
       }
 
       const retryable = err instanceof OpenRouterError ? err.retryable : true;
+      const rateLimited = err instanceof OpenRouterError && err.status === 429;
+      const maxAttempts = rateLimited ? RATE_LIMIT_MAX_ATTEMPTS : MAX_ATTEMPTS;
+      const delays = rateLimited ? RATE_LIMIT_DELAYS_MS : RETRY_DELAYS_MS;
 
-      if (!retryable || sawToken || attempt === MAX_ATTEMPTS) {
+      if (!retryable || sawToken || attempt >= maxAttempts) {
         throw err;
       }
 
-      await sleep(RETRY_DELAYS_MS[attempt - 1] ?? RETRY_DELAYS_MS[RETRY_DELAYS_MS.length - 1], options.signal);
+      const delayMs = delays[attempt - 1] ?? delays[delays.length - 1];
+      options.onRetry?.({
+        attempt,
+        maxAttempts,
+        delayMs,
+        rateLimited,
+        message: err instanceof Error ? err.message : String(err),
+      });
+      await sleep(delayMs, options.signal);
     }
   }
 
+  // Unreachable, kept for type completeness.
   throw lastError instanceof Error
     ? lastError
     : new OpenRouterError("OpenRouter request failed.", { retryable: false });

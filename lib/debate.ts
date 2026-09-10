@@ -148,6 +148,17 @@ async function* runDebateTurn(options: {
     reasoningEffort: options.reasoningEffort,
     supportsReasoningEffort: options.modelInfo?.supportsReasoningEffort ?? false,
     signal: options.signal,
+    onRetry: ({ attempt, maxAttempts, delayMs, rateLimited }) => {
+      queue.push({
+        type: "activity",
+        iteration: options.iteration,
+        round: options.round,
+        speakerIndex: options.speakerIndex,
+        message: rateLimited
+          ? `Rate limited by the provider, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt} of ${maxAttempts})…`
+          : `Temporary error, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt} of ${maxAttempts})…`,
+      });
+    },
     onReasoning: (text) => {
       if (!sawReasoningActivity && !sawContentToken) {
         sawReasoningActivity = true;
@@ -411,13 +422,23 @@ export async function* runDebate(
             `[debate] turn error iteration=${iteration} round=${round} speaker=${speakerIndex} model=${assignment.modelId} retryable=${retryable} message=${message}`,
           );
 
-          yield {
-            type: "error",
-            message: retryable
-              ? `${message} You can press Start debate to try again.`
-              : message,
-            retryable,
-          };
+          if (retryable) {
+            // A transient failure (rate limit, provider outage) should not
+            // throw away the rest of the debate: skip this turn and move on.
+            yield {
+              type: "turn_end",
+              iteration,
+              round,
+              speakerIndex,
+              modelId: assignment.modelId,
+              text: "",
+              usage: null,
+              error: `Skipped after retries: ${message}`,
+            };
+            continue;
+          }
+
+          yield { type: "error", message, retryable };
           return;
         }
       }
