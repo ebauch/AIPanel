@@ -22,5 +22,109 @@
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+
+.md {
+  line-height: 1.6;
+}
+
+.md > *:first-child {
+  margin-top: 0;
+}
+
+.md > *:last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin-bottom: 0.75em;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+}
+
+.md h1 {
+  font-size: 1.2em;
+}
+
+.md h2 {
+  font-size: 1.15em;
+}
+
+.md h3 {
+  font-size: 1.1em;
+}
+
+.md h4 {
+  font-size: 1.05em;
+}
+
+.md ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.md ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 0.75em;
+}
+
+.md li {
+  margin-bottom: 0.25em;
+}
+
+.md a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.md code {
+  background: rgba(127, 127, 127, 0.15);
+  border-radius: 0.25em;
+  padding: 0.1em 0.35em;
+  font-size: 0.9em;
+}
+
+.md pre {
+  background: rgba(127, 127, 127, 0.12);
+  border-radius: 0.5em;
+  padding: 0.75em 1em;
+  overflow-x: auto;
+  margin-bottom: 0.75em;
+}
+
+.md pre code {
+  background: none;
+  padding: 0;
+}
+
+.md table {
+  border-collapse: collapse;
+  margin-bottom: 0.75em;
+  display: block;
+  overflow-x: auto;
+}
+
+.md th,
+.md td {
+  border: 1px solid rgba(127, 127, 127, 0.3);
+  padding: 0.4em 0.6em;
+  text-align: left;
+}
+
+.md blockquote {
+  border-left: 3px solid rgba(127, 127, 127, 0.4);
+  padding-left: 1em;
+  margin-left: 0;
+  margin-bottom: 0.75em;
+  color: rgba(127, 127, 127, 1);
 }

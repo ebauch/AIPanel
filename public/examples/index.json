@@ -1,0 +1,101 @@
+{
+  "examples": [
+    {
+      "id": "messi-vs-ronaldo",
+      "title": "Messi or Ronaldo?",
+      "description": "See where the models agree, and where they never will.",
+      "contextBrief": "Who is the more successful footballer, Lionel Messi or Cristiano Ronaldo? Consider trophies, individual awards, statistics, longevity, and impact on their teams. Use the attached Wikipedia articles as the primary evidence.",
+      "mode": "assigned_stances",
+      "stances": [
+        {
+          "label": "Pro",
+          "instruction": "Argue that Lionel Messi is the more successful player. Make the strongest honest case using trophies, individual awards, statistics, longevity, and team impact, and push back on objections you consider weak."
+        },
+        {
+          "label": "Against",
+          "instruction": "Argue that Cristiano Ronaldo is the more successful player. Make the strongest honest case using trophies, individual awards, statistics, longevity, and team impact, and push back on objections you consider weak."
+        },
+        {
+          "label": "Balanced",
+          "instruction": "Take no side. Weigh the strongest points made by both sides, point out where either side is overstating or missing evidence, and steer the panel toward the most defensible conclusion."
+        }
+      ],
+      "documents": [
+        {
+          "label": "Lionel Messi (Wikipedia)",
+          "source": {
+            "kind": "url",
+            "url": "https://en.wikipedia.org/wiki/Lionel_Messi"
+          }
+        },
+        {
+          "label": "Cristiano Ronaldo (Wikipedia)",
+          "source": {
+            "kind": "url",
+            "url": "https://en.wikipedia.org/wiki/Cristiano_Ronaldo"
+          }
+        }
+      ]
+    },
+    {
+      "id": "resume-vs-job",
+      "title": "Resume vs. job description",
+      "description": "Get a checklist of resume edits the whole panel agrees on.",
+      "contextBrief": "Review the attached resume against the attached job description. Identify the strongest matches, the most important gaps, and the concrete changes that would make this resume a stronger application for this role.",
+      "mode": "conversation",
+      "documents": [
+        {
+          "label": "Resume \u2013 Jordan Lee",
+          "source": {
+            "kind": "pdf",
+            "path": "/examples/resume-jordan-lee.pdf"
+          }
+        },
+        {
+          "label": "Job description \u2013 Senior Product Manager",
+          "source": {
+            "kind": "pdf",
+            "path": "/examples/job-description-senior-product-manager.pdf"
+          }
+        }
+      ]
+    },
+    {
+      "id": "paris-vs-new-york",
+      "title": "Paris or New York?",
+      "description": "Get a verdict, and the reasons every model backed.",
+      "contextBrief": "I have one week for a sightseeing trip and can afford either Paris or New York City. Which city should I choose? Consider landmarks, museums, food, walkability, cost, and how much can realistically be seen in seven days.",
+      "mode": "assigned_stances",
+      "stances": [
+        {
+          "label": "Pro",
+          "instruction": "Argue that Paris is the better choice for this one-week trip. Make the strongest honest case using landmarks, museums, food, walkability, cost, and what can realistically be seen in seven days, and push back on objections you consider weak."
+        },
+        {
+          "label": "Against",
+          "instruction": "Argue that New York City is the better choice for this one-week trip. Make the strongest honest case using landmarks, museums, food, walkability, cost, and what can realistically be seen in seven days, and push back on objections you consider weak."
+        },
+        {
+          "label": "Balanced",
+          "instruction": "Take no side. Weigh the strongest points made by both sides, point out where either side is overstating or missing evidence, and steer the panel toward the most defensible conclusion."
+        }
+      ],
+      "documents": [
+        {
+          "label": "Tourism in Paris (Wikipedia)",
+          "source": {
+            "kind": "url",
+            "url": "https://en.wikipedia.org/wiki/Tourism_in_Paris"
+          }
+        },
+        {
+          "label": "Tourism in New York City (Wikipedia)",
+          "source": {
+            "kind": "url",
+            "url": "https://en.wikipedia.org/wiki/Tourism_in_New_York_City"
+          }
+        }
+      ]
+    }
+  ]
+}
