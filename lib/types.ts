@@ -31,11 +31,26 @@ export interface Stance {
 }
 
 export type PromptOverrides = Partial<{
+  systemContext: string;
   seedNeutral: string;
   seedStance: string;
   rebuttal: string;
   summary: string;
 }>;
+
+export interface ChatMessageContentPart {
+  type: "text";
+  text: string;
+  /** Anthropic-style cache breakpoint. OpenRouter forwards it to providers that
+   * support explicit prompt caching (Anthropic, Google) and ignores it for
+   * providers that cache automatically (OpenAI). */
+  cache_control?: { type: "ephemeral"; ttl?: "5m" | "1h" };
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string | ChatMessageContentPart[];
+}
 
 export interface DebateConfig {
   contextBrief: string;
@@ -104,6 +119,10 @@ export interface TokenUsage {
   promptTokens: number;
   completionTokens: number;
   cost: number | null;
+  /** Prompt tokens served from a provider's prompt cache (Anthropic, Google, OpenAI). */
+  cachedTokens?: number;
+  /** Prompt tokens written to a provider's prompt cache on this turn (Anthropic). */
+  cacheWriteTokens?: number;
 }
 
 export interface TranscriptMessage {

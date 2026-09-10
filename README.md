@@ -127,7 +127,14 @@ error if no key is configured (env var or saved in the browser).
   over SSE — no SDK, no local agent workspace.
 - Documents are inlined into every prompt (not memorized across turns), so
   each turn resends the context brief and source documents alongside the
-  running transcript since that speaker's last turn.
+  running transcript since that speaker's last turn. To keep that affordable,
+  each model's system message is split into a stable "role + brief" part and
+  a "documents" part carrying an Anthropic-style `cache_control` marker, and
+  that exact prefix is repeated byte-for-byte on every turn that model takes.
+  Providers with explicit prompt caching (Anthropic, Google) and OpenAI's
+  automatic caching then bill the repeated documents as cached reads instead
+  of full-price input on rebuttal turns. Per-turn and running cached-token
+  counts show up in the UI and the exported Markdown.
 - Reasoning effort maps to OpenRouter's `reasoning.effort` parameter
   (`normal` → `medium`, `high` → `high`) and is only sent for models that
   support it.

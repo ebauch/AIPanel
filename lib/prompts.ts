@@ -1,9 +1,6 @@
 import { truncateDocumentContent } from "./limits";
 import { DEFAULT_PROMPT_TEMPLATES, renderTemplate } from "./prompt-templates";
-import type { LabeledDocument, Stance } from "./types";
-
-const PANEL_CONTEXT_LINE =
-  "You are one of several AI models on a panel debating a question posed by a human.";
+import type { ChatMessage, LabeledDocument, Stance } from "./types";
 
 export function formatDocumentsBlock(documents: LabeledDocument[]): string {
   if (documents.length === 0) {
@@ -19,17 +16,54 @@ export function formatDocumentsBlock(documents: LabeledDocument[]): string {
     .join("\n\n");
 }
 
-export function buildSystemMessage(stance: Stance | null): string {
-  const roleInstruction = stance
+function roleInstructionFor(stance: Stance | null): string {
+  return stance
     ? stance.instruction
     : "You have no assigned side. Give an honest, balanced analysis. Acknowledge tradeoffs and uncertainty where appropriate.";
-
-  return `${roleInstruction}\n\n${PANEL_CONTEXT_LINE}`;
 }
 
-export interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
+/**
+ * Build the system message for a debate turn as two content parts: a stable
+ * "context" part (panel framing + role + brief) and a "documents" part that
+ * carries an Anthropic-style cache_control marker. Both parts are
+ * byte-identical across every turn a given model takes within an iteration,
+ * so providers that support explicit prompt caching (and OpenAI's automatic
+ * caching) stop re-billing the documents on rebuttal turns.
+ */
+export function buildSystemMessage(options: {
+  contextBrief: string;
+  documents: LabeledDocument[];
+  stance: Stance | null;
+  templateOverride?: string;
+}): ChatMessage {
+  const contextText = renderTemplate(
+    options.templateOverride ?? DEFAULT_PROMPT_TEMPLATES.systemContext,
+    {
+      contextBrief: options.contextBrief.trim(),
+      roleInstruction: roleInstructionFor(options.stance),
+      stanceLabel: options.stance?.label ?? "",
+    },
+  );
+
+  const documentsText = `## Source documents\n${formatDocumentsBlock(options.documents)}`;
+
+  return {
+    role: "system",
+    content:
+      options.documents.length > 0
+        ? [
+            { type: "text", text: contextText },
+            {
+              type: "text",
+              text: documentsText,
+              cache_control: { type: "ephemeral", ttl: "1h" },
+            },
+          ]
+        : [
+            { type: "text", text: contextText },
+            { type: "text", text: documentsText },
+          ],
+  };
 }
 
 export function buildSeedMessages(options: {
@@ -37,32 +71,30 @@ export function buildSeedMessages(options: {
   documents: LabeledDocument[];
   stance: Stance | null;
   templateOverride?: string;
+  systemTemplateOverride?: string;
 }): ChatMessage[] {
-  const documentsBlock = formatDocumentsBlock(options.documents);
+  const systemMessage = buildSystemMessage({
+    contextBrief: options.contextBrief,
+    documents: options.documents,
+    stance: options.stance,
+    templateOverride: options.systemTemplateOverride,
+  });
 
   const userContent =
     options.stance === null
       ? renderTemplate(
           options.templateOverride ?? DEFAULT_PROMPT_TEMPLATES.seedNeutral,
-          {
-            contextBrief: options.contextBrief.trim(),
-            documents: documentsBlock,
-          },
+          {},
         )
       : renderTemplate(
           options.templateOverride ?? DEFAULT_PROMPT_TEMPLATES.seedStance,
           {
-            contextBrief: options.contextBrief.trim(),
             stanceLabel: options.stance.label,
             stanceInstruction: options.stance.instruction,
-            documents: documentsBlock,
           },
         );
 
-  return [
-    { role: "system", content: buildSystemMessage(options.stance) },
-    { role: "user", content: userContent },
-  ];
+  return [systemMessage, { role: "user", content: userContent }];
 }
 
 export function buildRebuttalMessages(options: {
@@ -71,8 +103,14 @@ export function buildRebuttalMessages(options: {
   stance: Stance | null;
   messages: Array<{ speaker: string; stance: string | null; text: string }>;
   templateOverride?: string;
+  systemTemplateOverride?: string;
 }): ChatMessage[] {
-  const documentsBlock = formatDocumentsBlock(options.documents);
+  const systemMessage = buildSystemMessage({
+    contextBrief: options.contextBrief,
+    documents: options.documents,
+    stance: options.stance,
+    templateOverride: options.systemTemplateOverride,
+  });
 
   const formattedMessages =
     options.messages.length > 0
@@ -87,16 +125,11 @@ export function buildRebuttalMessages(options: {
   const userContent = renderTemplate(
     options.templateOverride ?? DEFAULT_PROMPT_TEMPLATES.rebuttal,
     {
-      contextBrief: options.contextBrief.trim(),
-      documents: documentsBlock,
       messages: formattedMessages,
     },
   );
 
-  return [
-    { role: "system", content: buildSystemMessage(options.stance) },
-    { role: "user", content: userContent },
-  ];
+  return [systemMessage, { role: "user", content: userContent }];
 }
 
 const TAKEAWAYS_SCHEMA_BLOCK = `## Output format

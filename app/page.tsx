@@ -488,9 +488,13 @@ function TurnCard({ turn }: { turn: TurnBlock }) {
 
       {turn.usage && (
         <p className="mt-2 text-[11px] text-zinc-400">
-          in {formatTokenCount(turn.usage.promptTokens)} / out{" "}
-          {formatTokenCount(turn.usage.completionTokens)}
-          {turn.usage.cost !== null ? ` · ${formatUsd(turn.usage.cost)}` : ""}
+          {`in ${formatTokenCount(turn.usage.promptTokens)}${
+            turn.usage.cachedTokens
+              ? ` (${formatTokenCount(turn.usage.cachedTokens)} cached)`
+              : ""
+          } / out ${formatTokenCount(turn.usage.completionTokens)}${
+            turn.usage.cost !== null ? ` · ${formatUsd(turn.usage.cost)}` : ""
+          }`}
         </p>
       )}
     </article>
@@ -536,9 +540,16 @@ export default function HomePage() {
   const [exportKind, setExportKind] = useState<
     "transcript" | "summary" | "both"
   >("both");
-  const [costSoFar, setCostSoFar] = useState<{ usd: number; tokens: number }>({
+  const [costSoFar, setCostSoFar] = useState<{
+    usd: number;
+    tokens: number;
+    promptTokens: number;
+    cachedTokens: number;
+  }>({
     usd: 0,
     tokens: 0,
+    promptTokens: 0,
+    cachedTokens: 0,
   });
   const [panelRoster, setPanelRoster] = useState<PanelEntry[]>([]);
   const [runRounds, setRunRounds] = useState(0);
@@ -738,6 +749,11 @@ export default function HomePage() {
     summarizeEnabled,
     summaryModelInfo,
   ]);
+
+  const cachedPercent =
+    costSoFar.promptTokens > 0
+      ? Math.round((costSoFar.cachedTokens / costSoFar.promptTokens) * 100)
+      : 0;
 
   const estimatedTurnCount = useMemo(() => {
     const totalIterations = mode === "randomized_stances" ? iterations : 1;
@@ -1047,6 +1063,8 @@ export default function HomePage() {
               usd: current.usd + (usage.cost ?? 0),
               tokens:
                 current.tokens + usage.promptTokens + usage.completionTokens,
+              promptTokens: current.promptTokens + usage.promptTokens,
+              cachedTokens: current.cachedTokens + (usage.cachedTokens ?? 0),
             }));
           }
         }
@@ -1306,6 +1324,8 @@ export default function HomePage() {
               usd: current.usd + (usage.cost ?? 0),
               tokens:
                 current.tokens + usage.promptTokens + usage.completionTokens,
+              promptTokens: current.promptTokens + usage.promptTokens,
+              cachedTokens: current.cachedTokens + (usage.cachedTokens ?? 0),
             }));
           }
         }
@@ -1362,7 +1382,7 @@ export default function HomePage() {
     setStatus("loading");
     setStatusMessage("Starting debate…");
     setErrorRetryable(false);
-    setCostSoFar({ usd: 0, tokens: 0 });
+    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
     setPanelRoster([]);
     setShowDebateInResults(false);
     setCurrentRound(0);
@@ -1466,7 +1486,7 @@ export default function HomePage() {
     setSummaryUsage(null);
     setStatus("idle");
     setStatusMessage(null);
-    setCostSoFar({ usd: 0, tokens: 0 });
+    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
     setPanelRoster([]);
     setShowDebateInResults(false);
     setElapsedSeconds(0);
@@ -1511,7 +1531,7 @@ export default function HomePage() {
     setStatusMessage(null);
     setElapsedSeconds(0);
     debateStartRef.current = null;
-    setCostSoFar({ usd: 0, tokens: 0 });
+    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
     setShowDebateInResults(false);
     setVerdictExpanded(false);
   }, [viewState, turns.length, isRunning]);
@@ -1658,7 +1678,10 @@ export default function HomePage() {
     if (costSoFar.usd > 0 || costSoFar.tokens > 0) {
       lines.push("## Cost");
       lines.push(
-        `Total: ${formatUsd(costSoFar.usd)} · ${formatTokenCount(costSoFar.tokens)} tokens`,
+        `Total: ${formatUsd(costSoFar.usd)} · ${formatTokenCount(costSoFar.tokens)} tokens` +
+          (costSoFar.cachedTokens > 0
+            ? ` (${formatTokenCount(costSoFar.cachedTokens)} cached)`
+            : ""),
       );
     }
 
@@ -1885,7 +1908,7 @@ export default function HomePage() {
               </button>
               <span
                 className="shrink-0 whitespace-nowrap rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-900 dark:text-zinc-400"
-                title={`Rough estimate: ${formatTokenCount(costEstimate.inputTokens)} input tokens, ${formatTokenCount(costEstimate.outputTokens)} output tokens across ${estimatedTurnCount} turns. Actual cost depends on response length and reasoning.`}
+                title={`Rough estimate: ${formatTokenCount(costEstimate.inputTokens)} input tokens, ${formatTokenCount(costEstimate.outputTokens)} output tokens across ${estimatedTurnCount} turns. Actual cost depends on response length and reasoning. Assumes prompt caching on repeat turns.`}
               >
                 Est. ~{formatUsd(costEstimate.totalUsd)}
               </span>
@@ -2361,8 +2384,14 @@ export default function HomePage() {
                         <p className="text-xs text-zinc-500">
                           {formatModeLabel(mode)} · {rounds} round(s) ·{" "}
                           {formatUsd(costSoFar.usd)} ·{" "}
-                          {formatTokenCount(costSoFar.tokens)} tokens ·{" "}
-                          {formatElapsed(elapsedSeconds)}
+                          {formatTokenCount(costSoFar.tokens)} tokens
+                          {cachedPercent > 0 && (
+                            <span className="text-zinc-400">
+                              {" "}
+                              · {cachedPercent}% cached
+                            </span>
+                          )}{" "}
+                          · {formatElapsed(elapsedSeconds)}
                           {summaryModelName && (
                             <>
                               {" "}
@@ -2554,6 +2583,12 @@ export default function HomePage() {
                       <span className="text-xs text-zinc-500">
                         {formatUsd(costSoFar.usd)} ·{" "}
                         {formatTokenCount(costSoFar.tokens)} tokens
+                        {cachedPercent > 0 && (
+                          <span className="text-zinc-400">
+                            {" "}
+                            · {cachedPercent}% cached
+                          </span>
+                        )}
                       </span>
                     )}
                     {isRunning && (

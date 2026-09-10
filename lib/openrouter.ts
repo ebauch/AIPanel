@@ -1,4 +1,4 @@
-import type { ReasoningEffort, TokenUsage } from "./types";
+import type { ChatMessage, ReasoningEffort, TokenUsage } from "./types";
 
 export const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 
@@ -89,11 +89,6 @@ export async function listModels(
 
   const data = (await response.json()) as { data: OpenRouterModel[] };
   return data.data ?? [];
-}
-
-interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
 }
 
 interface StreamChatCompletionOptions {
@@ -225,6 +220,10 @@ async function performStreamAttempt(
               prompt_tokens?: number;
               completion_tokens?: number;
               cost?: number;
+              prompt_tokens_details?: {
+                cached_tokens?: number;
+                cache_write_tokens?: number;
+              };
             };
             error?: { message?: string };
           };
@@ -252,10 +251,19 @@ async function performStreamAttempt(
           }
 
           if (chunk.usage) {
+            const details = chunk.usage.prompt_tokens_details;
             usage = {
               promptTokens: chunk.usage.prompt_tokens ?? 0,
               completionTokens: chunk.usage.completion_tokens ?? 0,
               cost: typeof chunk.usage.cost === "number" ? chunk.usage.cost : null,
+              cachedTokens:
+                typeof details?.cached_tokens === "number"
+                  ? details.cached_tokens
+                  : undefined,
+              cacheWriteTokens:
+                typeof details?.cache_write_tokens === "number"
+                  ? details.cache_write_tokens
+                  : undefined,
             };
           }
         }

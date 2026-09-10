@@ -204,9 +204,16 @@ export default function SettingsPage() {
                   <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
                     {meta.title}
                   </h2>
+                  {"description" in meta && meta.description && (
+                    <p className="mt-1 text-xs text-zinc-500">
+                      {meta.description}
+                    </p>
+                  )}
                   <p className="mt-1 text-xs text-zinc-500">
                     Placeholders:{" "}
-                    {meta.vars.map((name) => `{{${name}}}`).join(", ")}
+                    {meta.vars.length > 0
+                      ? meta.vars.map((name) => `{{${name}}}`).join(", ")
+                      : "(none)"}
                   </p>
                 </div>
                 {modified[stage] && (

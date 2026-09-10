@@ -1,15 +1,21 @@
 export const PROMPT_STAGES = {
+  systemContext: {
+    title: "System context (sent every turn)",
+    vars: ["contextBrief", "roleInstruction", "stanceLabel"],
+    description:
+      "Sent as the system message on every turn; the documents are appended after it and cached",
+  },
   seedNeutral: {
     title: "Opening turn (no stance)",
-    vars: ["contextBrief", "documents"],
+    vars: [],
   },
   seedStance: {
     title: "Opening turn (with stance)",
-    vars: ["contextBrief", "stanceLabel", "stanceInstruction", "documents"],
+    vars: ["stanceLabel", "stanceInstruction"],
   },
   rebuttal: {
     title: "Rebuttal turn",
-    vars: ["messages", "contextBrief", "documents"],
+    vars: ["messages"],
   },
   summary: {
     title: "Takeaways",
@@ -27,37 +33,25 @@ export function renderTemplate(
 }
 
 export const DEFAULT_PROMPT_TEMPLATES: Record<PromptStageKey, string> = {
-  seedNeutral: `## Context brief
-{{contextBrief}}
+  systemContext: `You are one of several AI models on a panel debating a question posed by a human.
 
-## Source documents
-{{documents}}
+{{roleInstruction}}
 
-## Task
+## Context brief
+{{contextBrief}}`,
+
+  seedNeutral: `## Task
 Open this debate with your initial argument or analysis. Be specific, cite details from the source documents where helpful, and keep your opening focused.`,
 
-  seedStance: `## Context brief
-{{contextBrief}}
-
-## Your assigned stance: {{stanceLabel}}
+  seedStance: `## Your assigned stance: {{stanceLabel}}
 {{stanceInstruction}}
 
 Do not switch sides or concede your assigned position unless you are rebutting a specific claim.
 
-## Source documents
-{{documents}}
-
 ## Task
 Open this debate with your initial argument or analysis, arguing from your assigned stance. Be specific, cite details from the source documents where helpful, and keep your opening focused.`,
 
-  rebuttal: `## Context brief
-{{contextBrief}}
-
-## Source documents
-The source documents are included above for reference.
-{{documents}}
-
-## What the other debaters said since your last turn
+  rebuttal: `## What the other debaters said since your last turn
 {{messages}}
 
 ## Task

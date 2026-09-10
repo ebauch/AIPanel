@@ -4,6 +4,7 @@ import { OpenRouterError, streamChatCompletion } from "./openrouter";
 import { buildRebuttalMessages, buildSeedMessages } from "./prompts";
 import { DEFAULT_STANCES } from "./stances";
 import type {
+  ChatMessage,
   DebateConfig,
   DebateModelInfo,
   DebateStreamEvent,
@@ -112,7 +113,7 @@ async function* runDebateTurn(options: {
   assignment: DebaterAssignment;
   modelInfo: DebateModelInfo | undefined;
   reasoningEffort: DebateConfig["reasoningEffort"];
-  messages: { role: "system" | "user" | "assistant"; content: string }[];
+  messages: ChatMessage[];
   iteration: number;
   round: number;
   speakerIndex: number;
@@ -299,6 +300,7 @@ export async function* runDebate(
                 assignment.stance === null
                   ? promptOverrides?.seedNeutral
                   : promptOverrides?.seedStance,
+              systemTemplateOverride: promptOverrides?.systemContext,
             })
           : buildRebuttalMessages({
               contextBrief: config.contextBrief,
@@ -314,6 +316,7 @@ export async function* runDebate(
                 text: message.text,
               })),
               templateOverride: promptOverrides?.rebuttal,
+              systemTemplateOverride: promptOverrides?.systemContext,
             });
 
         try {

@@ -22,13 +22,23 @@ interface EstimateDebateCostOptions {
   summaryModel?: DebateModelInfo;
 }
 
+// Repeat turns from the same model within an iteration send a byte-identical
+// documents block behind an Anthropic-style cache_control marker (see
+// lib/prompts.ts). This roughly approximates a cache read across providers
+// (Anthropic, Google, and OpenAI's automatic caching all discount cached
+// input heavily) without modeling each provider's exact cache pricing.
+const REPEAT_TURN_DOCUMENT_TOKEN_FACTOR = 0.25;
+
 export function estimateDebateCost(
   options: EstimateDebateCostOptions,
 ): CostEstimateResult {
   const assumedOutputTokens = options.assumedOutputTokens ?? 1500;
-  const briefAndDocsTokens =
-    estimateTokens(options.contextBrief) +
-    options.documents.reduce((sum, doc) => sum + estimateTokens(doc.content), 0);
+  const briefTokens = estimateTokens(options.contextBrief);
+  const docsTokens = options.documents.reduce(
+    (sum, doc) => sum + estimateTokens(doc.content),
+    0,
+  );
+  const briefAndDocsTokens = briefTokens + docsTokens;
 
   const totalIterations = options.mode === "randomized_stances" ? options.iterations : 1;
   const speakerCount = options.models.length;
@@ -42,10 +52,15 @@ export function estimateDebateCost(
       let turnsSoFarInIteration = 0;
 
       for (let round = 0; round < options.rounds; round += 1) {
+        const isFirstRound = round === 0;
+
         for (let speakerIndex = 0; speakerIndex < speakerCount; speakerIndex += 1) {
           const model = options.models[speakerIndex % options.models.length];
           const transcriptTokens = turnsSoFarInIteration * assumedOutputTokens;
-          const turnInputTokens = briefAndDocsTokens + transcriptTokens;
+          const effectiveDocsTokens = isFirstRound
+            ? docsTokens
+            : docsTokens * REPEAT_TURN_DOCUMENT_TOKEN_FACTOR;
+          const turnInputTokens = briefTokens + effectiveDocsTokens + transcriptTokens;
           const turnOutputTokens = assumedOutputTokens;
 
           inputTokens += turnInputTokens;
