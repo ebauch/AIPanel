@@ -2247,6 +2247,25 @@ export default function HomePage() {
               Flagship is the newest top model, Balanced costs about a
               quarter as much, Budget about a tenth.
             </p>
+            <label className="flex cursor-pointer items-start gap-3 pt-1">
+              <input
+                type="checkbox"
+                checked={speakerMemory}
+                onChange={(event) => setSpeakerMemory(event.target.checked)}
+                disabled={isRunning}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  Debaters remember their own earlier turns
+                </span>
+                <span className="block text-xs text-zinc-500">
+                  Each rebuttal includes what that model argued before, so it
+                  holds its position across rounds. Adds a few thousand
+                  uncached tokens per turn.
+                </span>
+              </span>
+            </label>
           </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
@@ -2283,25 +2302,6 @@ export default function HomePage() {
                 </div>
               </div>
             )}
-            <label className="flex cursor-pointer items-start gap-3 pt-1">
-              <input
-                type="checkbox"
-                checked={speakerMemory}
-                onChange={(event) => setSpeakerMemory(event.target.checked)}
-                disabled={isRunning}
-                className="mt-1"
-              />
-              <span>
-                <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                  Debaters remember their own earlier turns
-                </span>
-                <span className="block text-xs text-zinc-500">
-                  Each rebuttal includes what that model argued before, so it
-                  holds its position across rounds. Adds a few thousand
-                  uncached tokens per turn.
-                </span>
-              </span>
-            </label>
           </div>
             </div>
 
