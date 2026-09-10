@@ -63,6 +63,8 @@ export interface DebateConfig {
   stances: Stance[];
   summarize?: boolean;
   summaryModelId?: string;
+  /** Include each debater's own earlier turns in its rebuttal prompt (default true). */
+  speakerMemory?: boolean;
   promptOverrides?: PromptOverrides;
 }
 

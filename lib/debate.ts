@@ -315,6 +315,19 @@ export async function* runDebate(
                 stance: message.stance,
                 text: message.text,
               })),
+              ownMessages:
+                config.speakerMemory === false
+                  ? []
+                  : transcript
+                      .filter(
+                        (message) =>
+                          message.iteration === iteration &&
+                          message.speakerIndex === speakerIndex,
+                      )
+                      .map((message) => ({
+                        round: message.round,
+                        text: message.text,
+                      })),
               templateOverride: promptOverrides?.rebuttal,
               systemTemplateOverride: promptOverrides?.systemContext,
             });

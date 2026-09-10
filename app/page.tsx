@@ -518,6 +518,7 @@ export default function HomePage() {
     DEFAULT_STANCES.map((stance) => ({ ...stance })),
   );
   const [summarizeEnabled, setSummarizeEnabled] = useState(true);
+  const [speakerMemory, setSpeakerMemory] = useState(true);
   const [summaryModelId, setSummaryModelId] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [takeaways, setTakeaways] = useState<Takeaways | null>(null);
@@ -1455,6 +1456,7 @@ export default function HomePage() {
       stances,
       summarize: summarizeEnabled,
       summaryModelId: effectiveSummaryModelId,
+      speakerMemory,
       promptOverrides: readPromptOverrides(),
     };
 
@@ -1564,6 +1566,7 @@ export default function HomePage() {
     setRounds(3);
     setIterations(3);
     setSummarizeEnabled(true);
+    setSpeakerMemory(true);
     setSummaryModelId("");
     setTurns([]);
     turnsRef.current = [];
@@ -2280,6 +2283,25 @@ export default function HomePage() {
                 </div>
               </div>
             )}
+            <label className="flex cursor-pointer items-start gap-3 pt-1">
+              <input
+                type="checkbox"
+                checked={speakerMemory}
+                onChange={(event) => setSpeakerMemory(event.target.checked)}
+                disabled={isRunning}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">
+                  Debaters remember their own earlier turns
+                </span>
+                <span className="block text-xs text-zinc-500">
+                  Each rebuttal includes what that model argued before, so it
+                  holds its position across rounds. Adds a few thousand
+                  uncached tokens per turn.
+                </span>
+              </span>
+            </label>
           </div>
             </div>
 

@@ -15,7 +15,7 @@ export const PROMPT_STAGES = {
   },
   rebuttal: {
     title: "Rebuttal turn",
-    vars: ["messages"],
+    vars: ["messages", "ownMessages"],
   },
   summary: {
     title: "Takeaways",
@@ -51,7 +51,7 @@ Do not switch sides or concede your assigned position unless you are rebutting a
 ## Task
 Open this debate with your initial argument or analysis, arguing from your assigned stance. Be specific, cite details from the source documents where helpful, and keep your opening focused.`,
 
-  rebuttal: `## What the other debaters said since your last turn
+  rebuttal: `{{ownMessages}}## What the other debaters said since your last turn
 {{messages}}
 
 ## Task

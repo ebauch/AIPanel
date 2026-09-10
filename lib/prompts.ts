@@ -102,6 +102,8 @@ export function buildRebuttalMessages(options: {
   documents: LabeledDocument[];
   stance: Stance | null;
   messages: Array<{ speaker: string; stance: string | null; text: string }>;
+  /** The speaker's own earlier turns in this iteration, oldest first. Empty when memory is off. */
+  ownMessages?: Array<{ round: number; text: string }>;
   templateOverride?: string;
   systemTemplateOverride?: string;
 }): ChatMessage[] {
@@ -122,10 +124,19 @@ export function buildRebuttalMessages(options: {
           .join("\n\n")
       : "(no new messages since your last turn — continue the debate with your next contribution)";
 
+  const ownMessages = options.ownMessages ?? [];
+  const formattedOwnMessages =
+    ownMessages.length > 0
+      ? `## What you argued in your earlier turns\nStay consistent with your position unless the other debaters have genuinely changed your mind.\n\n${ownMessages
+          .map((message) => `**Round ${message.round}:**\n${message.text.trim()}`)
+          .join("\n\n")}\n\n`
+      : "";
+
   const userContent = renderTemplate(
     options.templateOverride ?? DEFAULT_PROMPT_TEMPLATES.rebuttal,
     {
       messages: formattedMessages,
+      ownMessages: formattedOwnMessages,
     },
   );
 
