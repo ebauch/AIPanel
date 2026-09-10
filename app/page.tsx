@@ -2257,12 +2257,12 @@ export default function HomePage() {
               />
               <span>
                 <span className="block text-sm font-medium text-zinc-800 dark:text-zinc-200">
-                  Debaters remember their own earlier turns
+                  Debaters remember their own earlier responses
                 </span>
                 <span className="block text-xs text-zinc-500">
-                  Each rebuttal includes what that model argued before, so it
+                  Each response includes what that model argued before, so it
                   holds its position across rounds. Adds a few thousand
-                  uncached tokens per turn.
+                  uncached tokens per response.
                 </span>
               </span>
             </label>
