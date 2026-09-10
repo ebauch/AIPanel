@@ -1,7 +1,11 @@
 # AI Panel
 
 A local Next.js app where you put a question to a panel of AI models and watch them
-debate it, then walk away with what they agree on. Paste a context brief, attach
+debate it, then walk away with what they agree on. 
+
+<img width="1260" height="827" alt="ai_panel_screenshot" src="https://github.com/user-attachments/assets/c0f0b77b-c705-43b4-883f-c739d08cd645" />
+
+Paste a context brief, attach
 source documents (PDF, URL, or pasted text), pick the debaters from any model
 available on [OpenRouter](https://openrouter.ai), and watch the panel argue it out
 over multiple rounds — live, streamed straight to the browser. When they finish,
