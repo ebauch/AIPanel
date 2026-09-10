@@ -1852,10 +1852,28 @@ export default function HomePage() {
               <button
                 type="button"
                 onClick={() => void startDebate()}
-                disabled={isRunning}
-                className="flex-1 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isRunning || isSummaryRunning}
+                className={`flex-1 rounded-xl px-4 py-2.5 text-sm font-semibold text-white ${
+                  isRunning || isSummaryRunning
+                    ? "animate-pulse cursor-wait bg-violet-600"
+                    : "bg-violet-600 hover:bg-violet-500 disabled:cursor-not-allowed disabled:opacity-60"
+                }`}
               >
-                {status === "loading" ? "Starting…" : "Run debate"}
+                {isRunning || isSummaryRunning ? (
+                  <span className="inline-flex items-center justify-center gap-2">
+                    <span
+                      aria-hidden
+                      className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white"
+                    />
+                    {status === "loading"
+                      ? "Starting…"
+                      : isSummaryRunning
+                        ? "Distilling…"
+                        : "Running…"}
+                  </span>
+                ) : (
+                  "Run debate"
+                )}
               </button>
               <button
                 type="button"
