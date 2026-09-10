@@ -95,6 +95,7 @@ lib/
   summarize.ts            # Takeaways generation (JSON parsing, validation)
   openrouter.ts           # OpenRouter HTTP client (streaming chat completions)
   models.ts               # Model catalog: filtering, recommended flagships
+  presets.ts               # Flagship/Balanced/Budget panel presets
   prompts.ts               # Prompt/message builders (seed, rebuttal, takeaways)
   prompt-templates.ts     # Default editable prompt templates
   cost.ts                  # Token/cost estimation
@@ -108,8 +109,21 @@ lib/
 - Reasoning effort: `high`
 - Randomized mode: 3 iterations
 - Default stances: Pro / Against / Balanced
-- Default selected models: the recommended flagship from each of Anthropic,
-  OpenAI, Google, and xAI (up to 3)
+- Default selected models: the **Balanced** preset (falls back to Flagship,
+  then the first three available models, if the catalog can't fill it)
+
+## Presets and cost
+
+Above the model list, three preset buttons — **Flagship**, **Balanced**, and
+**Budget** — each pick one model per provider (Anthropic, OpenAI, Google,
+xAI) from the live OpenRouter catalog, by release date and price relative to
+that provider's flagship: Flagship is each provider's newest top model,
+Balanced costs roughly a quarter as much, and Budget roughly a tenth. Each
+button shows its own estimated cost for the current settings so you can
+compare panels before running anything; the active preset is highlighted, and
+picking any other combination of models shows as "Custom." The cost estimate
+also assumes repeat turns from the same model reuse the cached documents (see
+below) where the provider supports it.
 
 ## Build
 

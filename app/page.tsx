@@ -18,6 +18,7 @@ import type {
 } from "@/lib/types";
 import { readPromptOverrides } from "@/lib/prompt-store";
 import { pickDefaultSummaryModel } from "@/lib/summary-utils";
+import { buildPresets, detectPreset, type PresetTier } from "@/lib/presets";
 import { apiHeaders } from "@/lib/api-key-store";
 import { DEFAULT_STANCES } from "@/lib/stances";
 import { MAX_DOCUMENT_CHARS } from "@/lib/limits";
@@ -577,16 +578,16 @@ export default function HomePage() {
       .then((data: { models: DebateModelInfo[]; error?: string }) => {
         setModels(data.models ?? []);
         setModelsError(data.error ?? null);
-        const recommendedIds = (data.models ?? [])
-          .filter((model) => model.available && model.recommended)
-          .map((model) => model.id);
         const fallbackIds = (data.models ?? [])
           .filter((model) => model.available)
           .map((model) => model.id);
+        const presets = buildPresets(data.models ?? []);
         const defaultIds =
-          recommendedIds.length > 0
-            ? recommendedIds.slice(0, Math.min(3, recommendedIds.length))
-            : fallbackIds.slice(0, Math.min(3, fallbackIds.length));
+          presets.balanced.length > 0
+            ? presets.balanced
+            : presets.flagship.length > 0
+              ? presets.flagship
+              : fallbackIds.slice(0, Math.min(3, fallbackIds.length));
         setSelectedModelIds(defaultIds);
       })
       .catch(() => {
@@ -741,6 +742,53 @@ export default function HomePage() {
     });
   }, [
     selectedModels,
+    contextBrief,
+    documents,
+    rounds,
+    iterations,
+    mode,
+    summarizeEnabled,
+    summaryModelInfo,
+  ]);
+
+  const presets = useMemo(() => buildPresets(models), [models]);
+
+  const activePreset: PresetTier = useMemo(
+    () => detectPreset(selectedModelIds, presets),
+    [selectedModelIds, presets],
+  );
+
+  const presetCostEstimates = useMemo(() => {
+    const estimateFor = (ids: string[]) => {
+      const tierModels = ids
+        .map((id) => models.find((model) => model.id === id))
+        .filter((model): model is DebateModelInfo => Boolean(model));
+      if (tierModels.length === 0) {
+        return null;
+      }
+      return estimateDebateCost({
+        models: tierModels,
+        contextBrief,
+        documents: documents.map((doc) => ({
+          label: doc.label,
+          content: doc.content,
+        })),
+        rounds,
+        iterations: mode === "randomized_stances" ? iterations : 1,
+        mode,
+        summarize: summarizeEnabled,
+        summaryModel: summaryModelInfo,
+      });
+    };
+
+    return {
+      flagship: estimateFor(presets.flagship),
+      balanced: estimateFor(presets.balanced),
+      budget: estimateFor(presets.budget),
+    };
+  }, [
+    presets,
+    models,
     contextBrief,
     documents,
     rounds,
@@ -2134,6 +2182,69 @@ export default function HomePage() {
               <h2 className="mb-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Debaters
               </h2>
+          <div className="mb-4 space-y-2">
+            <div className="grid grid-cols-4 gap-2">
+              {(
+                [
+                  ["flagship", "Flagship"],
+                  ["balanced", "Balanced"],
+                  ["budget", "Budget"],
+                ] as const
+              ).map(([tier, label]) => {
+                const ids = presets[tier];
+                const estimate = presetCostEstimates[tier];
+                const isActive = activePreset === tier;
+                return (
+                  <button
+                    key={tier}
+                    type="button"
+                    onClick={() => setSelectedModelIds(ids)}
+                    disabled={isRunning || ids.length === 0}
+                    className={`rounded-xl border px-2 py-2 text-center transition-colors ${
+                      isActive
+                        ? "border-violet-500 bg-violet-500/10"
+                        : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+                    } disabled:cursor-not-allowed disabled:opacity-40`}
+                  >
+                    <span
+                      className={`block text-xs font-semibold ${
+                        isActive
+                          ? "text-violet-700 dark:text-violet-300"
+                          : "text-zinc-700 dark:text-zinc-300"
+                      }`}
+                    >
+                      {label}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-zinc-500">
+                      {estimate ? `~${formatUsd(estimate.totalUsd)}` : "—"}
+                    </span>
+                  </button>
+                );
+              })}
+              <div
+                className={`rounded-xl border px-2 py-2 text-center ${
+                  activePreset === "custom"
+                    ? "border-violet-500 bg-violet-500/10"
+                    : "border-dashed border-zinc-200 dark:border-zinc-800"
+                }`}
+              >
+                <span
+                  className={`block text-xs font-semibold ${
+                    activePreset === "custom"
+                      ? "text-violet-700 dark:text-violet-300"
+                      : "text-zinc-400 dark:text-zinc-600"
+                  }`}
+                >
+                  Custom
+                </span>
+              </div>
+            </div>
+            <p className="text-[11px] text-zinc-500">
+              Presets pick one model per provider by release date and price.
+              Flagship is the newest top model, Balanced costs about a
+              quarter as much, Budget about a tenth.
+            </p>
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-zinc-800 dark:text-zinc-200">
               Debater models
