@@ -166,3 +166,18 @@ error if no key is configured (env var or saved in the browser).
 - Reasoning effort maps to OpenRouter's `reasoning.effort` parameter
   (`normal` → `medium`, `high` → `high`) and is only sent for models that
   support it.
+
+## Possible enhancements
+
+- **Cursor SDK backend.** An earlier version of this app ran on
+  `@cursor/sdk`, where each debater was a local agent with file tools that
+  read the documents itself. For anyone with a Cursor subscription that is
+  more cost-effective than paying per token through OpenRouter, and it
+  removes the document size ceiling. Reintroducing it as an optional backend
+  alongside OpenRouter would suit teams that already have Cursor.
+- **Parallel rounds.** Run all debaters in a round at once so a round takes
+  as long as the slowest model rather than the sum, cutting a 3x3 debate
+  from several minutes to about one.
+- **Response length setting.** Short, medium, and long targets so turns are
+  faster to produce and easier to read.
+- **Debate history.** Save finished debates locally and reopen them.
