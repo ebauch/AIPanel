@@ -125,6 +125,20 @@ picking any other combination of models shows as "Custom." The cost estimate
 also assumes repeat turns from the same model reuse the cached documents (see
 below) where the provider supports it.
 
+## Memory, rate limits, and failed turns
+
+By default each debater is reminded of its own earlier responses in the
+current iteration, so it holds its position across rounds instead of
+drifting. The checkbox under the preset buttons turns this off; the extra
+tokens are small and sit outside the cached prefix.
+
+When a provider rate-limits a model mid-debate, the turn waits and retries
+up to five times over about two minutes, showing the countdown on the card.
+If a turn still fails on a transient error, it is marked **Skipped** and the
+debate continues with the other models, so the rounds already run and the
+takeaways are kept. Errors that retrying cannot fix (a bad key, no credits,
+a rejected request) stop the run and show the provider's message.
+
 ## Build
 
 ```bash
