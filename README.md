@@ -146,9 +146,15 @@ by a Claude Max / ChatGPT Pro subscription instead of per token. Model ids are
 - Binary paths default to `/usr/local/bin/claude` and `/usr/local/bin/codex`;
   override with `AIPANEL_CLAUDE_BIN` / `AIPANEL_CODEX_BIN`.
 - The CLIs run with no tools, in an empty temp directory, one call at a time
-  per CLI, with a 10-minute timeout. `ANTHROPIC_API_KEY` / `OPENAI_API_KEY`
-  are removed from their environment so they cannot fall back to per-token
-  billing. Cost shows as "subscription" rather than a dollar amount.
+  per CLI, with a 10-minute timeout. `claude` runs with `--safe-mode` (no
+  CLAUDE.md, hooks, plugins or skills from `~/.claude`); `codex` ignores
+  `~/.codex/config.toml` and execpolicy rules. API keys and per-token reroutes
+  (`ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`/`VERTEX`,
+  `OPENAI_API_KEY`, `OPENAI_BASE_URL`, …) are removed from their environment,
+  and Settings flags a CLI logged in with an API key. Cost shows as
+  "subscription" rather than a dollar amount.
+- The app has no login: anyone who can reach it can start debates and test
+  calls on your subscriptions. Keep it on localhost or a trusted network.
 
 ## Memory, rate limits, and failed turns
 

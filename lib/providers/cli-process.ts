@@ -412,7 +412,6 @@ export function subscriptionModelInfo(
   };
 }
 
-
 /** A stream that fails before spawning anything (bad model id, oversized prompt). */
 export async function* errorStream(message: string): AsyncGenerator<StreamChunk> {
   yield { type: "error", message, retryable: false };

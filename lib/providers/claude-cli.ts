@@ -45,7 +45,17 @@ export const CLAUDE_OFFERED_MODELS: OfferedModel[] = [
 // A key in the app's environment would make `claude -p` bill the API account
 // per token instead of using the Max login; CLAUDECODE would make it refuse to
 // run when the dev server was started from inside a Claude Code session.
-const SCRUBBED_ENV = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDECODE"];
+// The Bedrock/Vertex/Foundry switches and a base-URL override would likewise
+// reroute calls to a per-token endpoint.
+const SCRUBBED_ENV = [
+  "ANTHROPIC_API_KEY",
+  "ANTHROPIC_AUTH_TOKEN",
+  "ANTHROPIC_BASE_URL",
+  "CLAUDE_CODE_USE_BEDROCK",
+  "CLAUDE_CODE_USE_VERTEX",
+  "CLAUDE_CODE_USE_FOUNDRY",
+  "CLAUDECODE",
+];
 
 // Long system prompts (documents are part of the system message) go on stdin
 // instead of argv: macOS caps the whole argv+env at 1 MB.
@@ -87,6 +97,11 @@ export function buildClaudeArgs(req: StreamRequest): { args: string[]; stdin: st
     "",
     "--strict-mcp-config",
     "--no-session-persistence",
+    // No CLAUDE.md, settings hooks/env, plugins or skills from the host's
+    // ~/.claude: a debater must follow the debate prompt, not Erik's personal
+    // Claude Code rules, and a settings-level API key or apiKeyHelper must not
+    // route around the env scrub. Auth (the Max login) still works.
+    "--safe-mode",
   ];
   const effort = claudeEffort(req);
   if (effort) {
@@ -221,7 +236,9 @@ export function createClaudeParser(bin: string, timeoutMs = CLI_TIMEOUT_MS): Cli
           {
             type: "error",
             message: withStderr("claude CLI finished without a result event", result.stderr),
-            retryable: true,
+            // Exit 0 but unparseable: an output-format change, not a blip.
+            // Retrying would spend a second subscription call for the same result.
+            retryable: false,
           },
         ];
       }
@@ -235,7 +252,6 @@ export interface CliProviderOptions {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
 }
-
 
 export function createClaudeCliProvider(options: CliProviderOptions = {}): ModelProvider {
   const bin = options.bin ?? process.env.AIPANEL_CLAUDE_BIN ?? DEFAULT_CLAUDE_BIN;
@@ -313,6 +329,15 @@ export function parseClaudeAuthStatus(result: CliRunResult, stdout: string, bin:
   const loggedIn = parsed && typeof parsed.loggedIn === "boolean" ? parsed.loggedIn : result.code === 0;
   if (!loggedIn) {
     return { state: "missing", detail: "claude CLI found but not logged in (run `claude` and /login)" };
+  }
+  // Only a claude.ai login uses the Max subscription; a console / API-key
+  // login bills per token, which this provider exists to avoid.
+  const authMethod = parsed && typeof parsed.authMethod === "string" ? parsed.authMethod : undefined;
+  if (authMethod !== undefined && authMethod !== "claude.ai") {
+    return {
+      state: "error",
+      detail: `claude is logged in via ${authMethod}, which bills per token; log in with claude.ai instead (\`claude auth login\`)`,
+    };
   }
   const extras = ["subscriptionType", "authMethod"]
     .map((key) => (parsed && typeof parsed[key] === "string" ? `${key}: ${parsed[key]}` : null))

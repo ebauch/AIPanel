@@ -46,7 +46,7 @@ export const CODEX_OFFERED_MODELS: OfferedModel[] = [
 
 // An API key in the app's environment would switch codex to per-token
 // billing instead of the ChatGPT login.
-const SCRUBBED_ENV = ["OPENAI_API_KEY", "CODEX_API_KEY"];
+const SCRUBBED_ENV = ["OPENAI_API_KEY", "CODEX_API_KEY", "OPENAI_BASE_URL"];
 
 // The prompt travels in argv (stdin is ignored: `codex exec` would append it
 // to the prompt). macOS caps argv+env at 1 MB, so refuse clearly before that.
@@ -80,6 +80,10 @@ export function buildCodexArgs(req: StreamRequest): string[] {
     "--skip-git-repo-check",
     "--ephemeral",
     "--json",
+    // Keep ~/.codex/config.toml (MCP servers, feature flags) and execpolicy
+    // rules out of debate turns; auth still comes from CODEX_HOME.
+    "--ignore-user-config",
+    "--ignore-rules",
     "-s",
     "read-only",
     "-m",
@@ -164,11 +168,13 @@ export function createCodexParser(bin: string, timeoutMs = CLI_TIMEOUT_MS): CliP
       if (failure && message === undefined) {
         return fail(`codex reported a failure: ${failure}`, false);
       }
+      // Exit 0 but unparseable: an output-format change, not a blip, so no
+      // retry (it would spend a second subscription call for the same result).
       if (events === 0) {
-        return fail("could not parse codex output (no JSON events on stdout)", true);
+        return fail("could not parse codex output (no JSON events on stdout)", false);
       }
       if (message === undefined) {
-        return fail("codex finished without a final agent message", true);
+        return fail("codex finished without a final agent message", false);
       }
       return [
         { type: "delta", text: message },

@@ -21,6 +21,13 @@ function log(extra) {
       hasAnthropicKey: "ANTHROPIC_API_KEY" in process.env,
       hasClaudeCode: "CLAUDECODE" in process.env,
       hasOpenAIKey: "OPENAI_API_KEY" in process.env,
+      rerouteVars: [
+        "ANTHROPIC_BASE_URL",
+        "CLAUDE_CODE_USE_BEDROCK",
+        "CLAUDE_CODE_USE_VERTEX",
+        "CLAUDE_CODE_USE_FOUNDRY",
+        "OPENAI_BASE_URL",
+      ].filter((key) => key in process.env),
       time: Date.now(),
       ...extra,
     })}\n`,
@@ -62,8 +69,16 @@ async function claude() {
       out({ loggedIn: false });
       process.exit(1);
     }
+    if (scenario === "console_login") {
+      out({ loggedIn: true, authMethod: "console", apiProvider: "firstParty" });
+      return;
+    }
     out({ loggedIn: true, authMethod: "claude.ai", subscriptionType: "max" });
     return;
+  }
+  if (scenario === "hang" || scenario === "stream_then_hang") {
+    // Spawn and log the grandchild first thing, so tests can wait for it.
+    log({ grandchild: spawnGrandchild(), event: "grandchild" });
   }
   const stdin = readStdin();
   const sysIndex = argv.indexOf("--system-prompt");
@@ -79,8 +94,11 @@ async function claude() {
     process.stderr.write("boom: upstream said Bearer abcdefghijklmnopqrstuv\n");
     process.exit(2);
   }
+  if (scenario === "no_result") {
+    out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "half" } } });
+    return;
+  }
   if (scenario === "hang" || scenario === "stream_then_hang") {
-    log({ grandchild: spawnGrandchild(), event: "grandchild" });
     if (scenario === "stream_then_hang") {
       out({ type: "stream_event", event: { type: "content_block_delta", delta: { type: "text_delta", text: "partial" } } });
     }
@@ -121,6 +139,9 @@ async function codex() {
     process.stderr.write("Logged in using ChatGPT\n");
     return;
   }
+  if (scenario === "hang") {
+    log({ grandchild: spawnGrandchild(), event: "grandchild" });
+  }
   log({ stdin: readStdin(), event: "start" });
   const prompt = argv[argv.length - 1];
   if (scenario === "failed") {
@@ -128,8 +149,11 @@ async function codex() {
     out({ type: "turn.failed", error: { message: "usage limit reached" } });
     process.exit(1);
   }
+  if (scenario === "no_json") {
+    process.stdout.write("this is not the JSON you are looking for\n");
+    return;
+  }
   if (scenario === "hang") {
-    log({ grandchild: spawnGrandchild(), event: "grandchild" });
     await hang();
   }
   if (scenario === "slow") {

@@ -21,7 +21,7 @@ const messages = (user: string, system = "You are a debater."): ChatMessage[] =>
 describe("buildClaudeArgs", () => {
   it("builds the print/stream-json argv with no tools and the prompt on stdin", () => {
     const { args, stdin } = buildClaudeArgs({ model: "claude-opus-5-5", messages: messages("Argue for X.") });
-    assert.deepEqual(args.slice(0, 13), [
+    assert.deepEqual(args.slice(0, 14), [
       "-p",
       "--model",
       "claude-opus-5-5",
@@ -33,6 +33,7 @@ describe("buildClaudeArgs", () => {
       "",
       "--strict-mcp-config",
       "--no-session-persistence",
+      "--safe-mode",
       "--system-prompt",
       "You are a debater.\n\n## Source documents\n(none)",
     ]);
@@ -42,8 +43,8 @@ describe("buildClaudeArgs", () => {
 
   it("maps effort: explicit setting wins, else debate 'high', else none", () => {
     const base = { model: "claude-opus-5-5", messages: messages("x") };
-    assert.deepEqual(buildClaudeArgs({ ...base, effort: "max" }).args.slice(11, 13), ["--effort", "max"]);
-    assert.deepEqual(buildClaudeArgs({ ...base, reasoningEffort: "high" }).args.slice(11, 13), ["--effort", "high"]);
+    assert.deepEqual(buildClaudeArgs({ ...base, effort: "max" }).args.slice(12, 14), ["--effort", "max"]);
+    assert.deepEqual(buildClaudeArgs({ ...base, reasoningEffort: "high" }).args.slice(12, 14), ["--effort", "high"]);
     assert.ok(!buildClaudeArgs({ ...base, reasoningEffort: "normal" }).args.includes("--effort"));
     assert.ok(!buildClaudeArgs({ ...base, effort: "bogus" }).args.includes("bogus"));
   });
@@ -135,8 +136,15 @@ describe("claude-cli provider (fake binary)", () => {
 
   it("kills the whole process group on timeout", async () => {
     const fake = makeFakeCli("claude");
-    const provider = createClaudeCliProvider({ bin: fake.bin, env: fake.env("hang"), timeoutMs: 1500 });
-    const chunks = await drain(provider.stream({ model: "claude-opus-5-5", messages: messages("x") }, {}));
+    // Generous timeout: under load the fake needs time to start and log its
+    // grandchild before the timeout fires.
+    const provider = createClaudeCliProvider({ bin: fake.bin, env: fake.env("hang"), timeoutMs: 4000 });
+    const pending = drain(provider.stream({ model: "claude-opus-5-5", messages: messages("x") }, {}));
+    assert.ok(
+      await waitFor(() => fake.log().some((entry) => entry.event === "grandchild"), 4000),
+      "fake logged its grandchild before the timeout",
+    );
+    const chunks = await pending;
     assert.equal(chunks.length, 1);
     assert.equal(chunks[0].type, "error");
     assert.match(chunks[0].type === "error" ? chunks[0].message : "", /timed out/);
@@ -195,6 +203,34 @@ describe("claude-cli provider (fake binary)", () => {
     assert.equal(s1.split(":")[1], e1.split(":")[1], "first call finished before the second started");
     assert.equal(s2.split(":")[1], e2.split(":")[1]);
     assert.ok(s1.startsWith("start") && e1.startsWith("end") && s2.startsWith("start") && e2.startsWith("end"));
+  });
+
+  it("exit 0 without a result event fails the turn without a retry", async () => {
+    const fake = makeFakeCli("claude");
+    const provider = createClaudeCliProvider({ bin: fake.bin, env: fake.env("no_result") });
+    const chunks = await drain(provider.stream({ model: "claude-opus-5-5", messages: messages("x") }, {}));
+    const last = chunks.at(-1);
+    assert.equal(last?.type, "error");
+    assert.match(last?.type === "error" ? last.message : "", /without a result event/);
+    assert.equal(last?.type === "error" && last.retryable, false);
+  });
+
+  it("scrubs the per-token reroute variables too", async () => {
+    const fake = makeFakeCli("claude");
+    const provider = createClaudeCliProvider({
+      bin: fake.bin,
+      env: fake.env("ok", { ANTHROPIC_BASE_URL: "https://x", CLAUDE_CODE_USE_BEDROCK: "1", CLAUDE_CODE_USE_VERTEX: "1" }),
+    });
+    await drain(provider.stream({ model: "claude-opus-5-5", messages: messages("x") }, {}));
+    const [call] = fake.log();
+    assert.deepEqual(call.rerouteVars, []);
+  });
+
+  it("isConfigured: a console (API-key) login is flagged as per-token, not ready", async () => {
+    const fake = makeFakeCli("claude");
+    const status = await createClaudeCliProvider({ bin: fake.bin, env: fake.env("console_login") }).isConfigured({});
+    assert.equal(status.state, "error");
+    assert.match(status.detail, /per token/);
   });
 
   it("isConfigured: CLI found and logged in / logged out", async () => {

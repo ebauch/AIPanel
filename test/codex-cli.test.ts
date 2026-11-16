@@ -23,6 +23,8 @@ describe("buildCodexArgs", () => {
       "--skip-git-repo-check",
       "--ephemeral",
       "--json",
+      "--ignore-user-config",
+      "--ignore-rules",
       "-s",
       "read-only",
       "-m",
@@ -70,7 +72,7 @@ describe("codex-cli provider (fake binary)", () => {
     const marker = path.join(fake.dir, "pwned");
     const provider = createCodexCliProvider({
       bin: fake.bin,
-      env: fake.env("ok", { OPENAI_API_KEY: "sk-should-not-leak" }),
+      env: fake.env("ok", { OPENAI_API_KEY: "sk-should-not-leak", OPENAI_BASE_URL: "https://x" }),
     });
     const prompt = `REPLY_AS:Astra $(touch ${marker}); touch ${marker}`;
     const chunks = await drain(provider.stream({ model: "gpt-6-astra", messages: messages(prompt) }, {}));
@@ -85,6 +87,7 @@ describe("codex-cli provider (fake binary)", () => {
     assert.equal((call.argv as string[]).at(-1), `You are a debater.\n\n---\n\n${prompt}`);
     assert.equal(call.stdin, "", "stdin is ignored (codex would append it to the prompt)");
     assert.equal(call.hasOpenAIKey, false);
+    assert.deepEqual(call.rerouteVars, []);
     assert.match(String(call.cwd), /aipanel-codex-/);
     assert.ok(!fs.existsSync(marker));
   });
@@ -101,6 +104,15 @@ describe("codex-cli provider (fake binary)", () => {
     }
   });
 
+  it("exit 0 with no JSON on stdout fails the turn without a retry", async () => {
+    const fake = makeFakeCli("codex");
+    const provider = createCodexCliProvider({ bin: fake.bin, env: fake.env("no_json") });
+    const [chunk] = await drain(provider.stream({ model: "gpt-6-astra", messages: messages("x") }, {}));
+    assert.equal(chunk.type, "error");
+    assert.match(chunk.type === "error" ? chunk.message : "", /no JSON events/);
+    assert.equal(chunk.type === "error" && chunk.retryable, false);
+  });
+
   it("an invalid model id fails without spawning", async () => {
     const fake = makeFakeCli("codex");
     const provider = createCodexCliProvider({ bin: fake.bin, env: fake.env("ok") });
@@ -111,10 +123,15 @@ describe("codex-cli provider (fake binary)", () => {
 
   it("kills the whole process group on timeout", async () => {
     const fake = makeFakeCli("codex");
-    const provider = createCodexCliProvider({ bin: fake.bin, env: fake.env("hang"), timeoutMs: 1500 });
-    const chunks = await drain(provider.stream({ model: "gpt-6-astra", messages: messages("x") }, {}));
+    const provider = createCodexCliProvider({ bin: fake.bin, env: fake.env("hang"), timeoutMs: 4000 });
+    const pending = drain(provider.stream({ model: "gpt-6-astra", messages: messages("x") }, {}));
+    assert.ok(
+      await waitFor(() => fake.log().some((entry) => entry.event === "grandchild"), 4000),
+      "fake logged its grandchild before the timeout",
+    );
+    const chunks = await pending;
     assert.equal(chunks[0].type, "error");
-    assert.match(chunks[0].type === "error" ? chunks[0].message : "", /timed out after 2s/);
+    assert.match(chunks[0].type === "error" ? chunks[0].message : "", /timed out after 4s/);
     const grandchild = Number(fake.log().find((entry) => entry.event === "grandchild")?.grandchild);
     assert.ok(grandchild > 0);
     assert.ok(await waitFor(() => !isAlive(grandchild)));
