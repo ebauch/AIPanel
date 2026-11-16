@@ -38,6 +38,8 @@ import {
   formatUsd,
 } from "@/lib/cost";
 import type { DebateExample, ExamplesIndex } from "@/lib/examples";
+import type { DebateListItem } from "@/lib/debate-record";
+import { RECENTS_LIMIT, selectRecents, type RecentCard } from "@/lib/recents";
 import { Markdown } from "@/app/components/Markdown";
 
 type SourceMeta =
@@ -573,6 +575,8 @@ export default function HomePage() {
   );
   const [examples, setExamples] = useState<DebateExample[]>([]);
   const [loadingExampleId, setLoadingExampleId] = useState<string | null>(null);
+  /** Saved debates shown instead of the examples; null = none saved or no store. */
+  const [recents, setRecents] = useState<RecentCard[] | null>(null);
   const [exportKind, setExportKind] = useState<
     "transcript" | "summary" | "both"
   >("both");
@@ -661,6 +665,14 @@ export default function HomePage() {
     summaryModelId || pickDefaultSummaryModel(models, selectedModelIds);
 
   const isRunning = status === "loading" || status === "running";
+
+  // Refresh after a run starts or ends so the new debate and its status show up.
+  useEffect(() => {
+    void fetch(`/api/debates?limit=${RECENTS_LIMIT}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { debates?: DebateListItem[] } | null) => setRecents(selectRecents(data?.debates)))
+      .catch(() => setRecents(null));
+  }, [savedDebateId, isRunning]);
   const isSummaryRunning =
     summaryStatus === "loading" || summaryStatus === "streaming";
 
@@ -1999,7 +2011,34 @@ export default function HomePage() {
         </p>
       )}
 
-      {examples.length > 0 && (
+      {recents ? (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Recents
+            </h2>
+            <Link href="/debates" className="text-xs font-medium text-violet-600 hover:underline">
+              All debates →
+            </Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {recents.map((recent) => (
+              <Link
+                key={recent.id}
+                href={recent.href}
+                className="min-w-0 rounded-xl border border-zinc-200 bg-white p-4 text-left text-sm hover:border-violet-300 hover:bg-violet-50/40 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-violet-800 dark:hover:bg-violet-950/20"
+              >
+                <span className="block truncate font-medium text-zinc-900 dark:text-zinc-50" title={recent.title}>
+                  {recent.title}
+                </span>
+                <span className="mt-1 block truncate text-xs text-zinc-500">
+                  {recent.subline}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : examples.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Examples
