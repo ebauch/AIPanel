@@ -153,8 +153,15 @@ by a Claude Max / ChatGPT Pro subscription instead of per token. Model ids are
   `OPENAI_API_KEY`, `OPENAI_BASE_URL`, …) are removed from their environment,
   and Settings flags a CLI logged in with an API key. Cost shows as
   "subscription" rather than a dollar amount.
-- The app has no login: anyone who can reach it can start debates and test
-  calls on your subscriptions. Keep it on localhost or a trusted network.
+- Login: every route (pages, `/api/*`, `public/` files; not the hashed
+  `_next/static` bundles) asks for HTTP Basic Auth, realm "home studio". Point
+  `AIPANEL_AUTH_FILE` at a JSON file holding `{ "auth": { "user", "salt",
+  "hash" } }` (the home-studio dashboard's `config/local.json`), so the same
+  password unlocks both; changes to the file are picked up without a restart.
+  With `AIPANEL_AUTH_FILE` unset, only localhost is served and everything else
+  gets 401. That localhost check trusts the `X-Forwarded-For` and `Host`
+  headers, which a crafted request can forge, so set `AIPANEL_AUTH_FILE`
+  whenever the app is reachable from the network.
 
 ## Memory, rate limits, and failed turns
 
