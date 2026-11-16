@@ -110,44 +110,52 @@ export async function loadCredentials(filePath: string): Promise<Credentials | n
   return creds;
 }
 
-function isLoopbackAddress(addr: string): boolean {
-  const a = addr.trim().toLowerCase().replace(/^\[|\]$/g, "");
-  return a === "::1" || /^127\.\d+\.\d+\.\d+$/.test(a) || /^::ffff:127\.\d+\.\d+\.\d+$/.test(a);
+// Last Authorization header that passed scrypt, tied to the credentials
+// object it was checked against (a reload makes a new object, dropping it).
+// Stored as a SHA-256 digest and compared with timingSafeEqual, so repeat
+// requests from a logged-in browser skip the ~50 ms scrypt without a
+// timing-leaky string compare.
+let verified: { creds: Credentials; digest: Buffer } | null = null;
+const digestOf = (header: string) => crypto.createHash("sha256").update(header).digest();
+
+function isMemoised(header: string | null, creds: Credentials): boolean {
+  if (!header || !verified || verified.creds !== creds) return false;
+  return crypto.timingSafeEqual(digestOf(header), verified.digest);
 }
 
-function isLoopbackHost(host: string | null): boolean {
-  if (!host) return false;
-  const name = host.trim().toLowerCase().replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
-  return name === "localhost" || isLoopbackAddress(name);
-}
-
-/**
- * Is this request from the Mac itself? Next.js fills `x-forwarded-for` from
- * the socket's remote address when the client didn't send one; the proxy has
- * no other view of the peer. Every hop must be loopback, AND the Host must be
- * a loopback name: a LAN browser hitting home.local:PORT, or a DNS-rebinding
- * page, carries a non-loopback Host. A client that forges BOTH headers is not
- * stopped by this — the real guard on the LAN is AIPANEL_AUTH_FILE.
- */
-export function isLocalRequest(headers: Headers): boolean {
-  const xff = headers.get("x-forwarded-for");
-  if (!xff) return false;
-  const hops = xff.split(",").filter((h) => h.trim() !== "");
-  return hops.length > 0 && hops.every(isLoopbackAddress) && isLoopbackHost(headers.get("host"));
-}
+let warnedDisabled = false;
 
 /**
- * The whole decision for one request. `authFile` is AIPANEL_AUTH_FILE.
- * Never fails open: unset → loopback only; set but unusable → refuse all.
+ * The whole decision for one request. `env` carries AIPANEL_AUTH_FILE and
+ * AIPANEL_AUTH_DISABLED. Never fails open by accident:
+ * - file set → login required (AIPANEL_AUTH_DISABLED is ignored);
+ * - file unset → every request refused, whoever sends it. Next.js keeps a
+ *   client-sent X-Forwarded-For, so "is this localhost?" can't be answered
+ *   safely here; the only way out is the explicit dev flag below.
+ * - file unset + AIPANEL_AUTH_DISABLED=1 → open (dev on the Mac; `npm run dev`
+ *   binds 127.0.0.1), with a loud warning on the first request.
  */
-export async function authorize(headers: Headers, authFile: string | undefined, path = ""): Promise<AuthDecision> {
+export async function authorize(
+  headers: Headers,
+  env: Record<string, string | undefined>,
+  path = "",
+): Promise<AuthDecision> {
+  const authFile = env.AIPANEL_AUTH_FILE;
   if (!authFile) {
-    if (isLocalRequest(headers)) return { ok: true };
+    if (env.AIPANEL_AUTH_DISABLED === "1") {
+      if (!warnedDisabled) {
+        warnedDisabled = true;
+        console.warn(
+          "[auth] WARNING: AIPANEL_AUTH_DISABLED=1 and AIPANEL_AUTH_FILE unset: AI Panel is serving WITHOUT a login. Dev only.",
+        );
+      }
+      return { ok: true };
+    }
     return {
       ok: false,
       status: 401,
-      message: "Login not configured: AIPANEL_AUTH_FILE is unset, so only localhost may use AI Panel.",
-      log: `[auth] refused ${path || "request"} from ${headers.get("x-forwarded-for") ?? "unknown"}: AIPANEL_AUTH_FILE unset, non-localhost`,
+      message: "Login not configured: set AIPANEL_AUTH_FILE.",
+      log: `[auth] refused ${path || "request"}: AIPANEL_AUTH_FILE is unset; set it to the dashboard's config/local.json (or AIPANEL_AUTH_DISABLED=1 for local dev)`,
     };
   }
   const creds = await loadCredentials(authFile);
@@ -160,8 +168,19 @@ export async function authorize(headers: Headers, authFile: string | undefined, 
     };
   }
   const header = headers.get("authorization");
-  if (await verifyBasicAuth(header, creds)) return { ok: true };
+  if (isMemoised(header, creds)) return { ok: true };
+  if (await verifyBasicAuth(header, creds)) {
+    verified = { creds, digest: digestOf(header as string) };
+    return { ok: true };
+  }
   return { ok: false, status: 401, message: header ? "Invalid credentials" : "Authentication required" };
+}
+
+/** Tests only: forget the memoised login and the one-time warning. */
+export function resetAuthState(): void {
+  verified = null;
+  warnedDisabled = false;
+  cache = null;
 }
 
 export function wwwAuthenticate(): string {

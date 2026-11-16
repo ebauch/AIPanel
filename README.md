@@ -54,13 +54,15 @@ Alternatively, skip the env file and paste a key on the **Settings** page — it
 stays in your browser and is sent only to this app's own server, which forwards
 it to OpenRouter.
 
-3. Start the dev server:
+3. Start the dev server. The app requires a login (see
+   [Subscription providers](#subscription-providers-claude-max-chatgpt-pro)); for local development
+   without one:
 
 ```bash
-npm run dev
+AIPANEL_AUTH_DISABLED=1 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 ## Usage
 
@@ -158,10 +160,10 @@ by a Claude Max / ChatGPT Pro subscription instead of per token. Model ids are
   `AIPANEL_AUTH_FILE` at a JSON file holding `{ "auth": { "user", "salt",
   "hash" } }` (the home-studio dashboard's `config/local.json`), so the same
   password unlocks both; changes to the file are picked up without a restart.
-  With `AIPANEL_AUTH_FILE` unset, only localhost is served and everything else
-  gets 401. That localhost check trusts the `X-Forwarded-For` and `Host`
-  headers, which a crafted request can forge, so set `AIPANEL_AUTH_FILE`
-  whenever the app is reachable from the network.
+  With `AIPANEL_AUTH_FILE` unset, every request is refused (401), localhost
+  included. For local development only, `AIPANEL_AUTH_DISABLED=1` turns the
+  login off while the file is unset (it is ignored once the file is set), and
+  the server logs a warning. `npm run dev` binds to 127.0.0.1.
 
 ## Memory, rate limits, and failed turns
 

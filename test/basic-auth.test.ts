@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, it, mock } from "node:test";
 import { NextRequest } from "next/server";
-import { authorize, hashPassword, isLocalRequest, makeCredentials } from "@/lib/basic-auth";
+import { authorize, hashPassword, makeCredentials, resetAuthState } from "@/lib/basic-auth";
 import { config, proxy } from "@/proxy";
 
 // Fixture credentials only — generated here, never the dashboard's real ones.
@@ -25,6 +25,7 @@ function req(opts: { auth?: string; xff?: string; host?: string; path?: string }
 let dir: string;
 let authFile: string;
 const savedEnv = process.env.AIPANEL_AUTH_FILE;
+const savedDisabled = process.env.AIPANEL_AUTH_DISABLED;
 
 async function writeCreds(user: string, pass: string, mtime?: Date) {
   // Dashboard layout: config/local.json with the creds under `auth`.
@@ -34,6 +35,8 @@ async function writeCreds(user: string, pass: string, mtime?: Date) {
 }
 
 beforeEach(() => {
+  resetAuthState();
+  delete process.env.AIPANEL_AUTH_DISABLED;
   dir = fs.mkdtempSync(path.join(os.tmpdir(), "aipanel-auth-"));
   authFile = path.join(dir, "local.json");
 });
@@ -43,6 +46,8 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
   if (savedEnv === undefined) delete process.env.AIPANEL_AUTH_FILE;
   else process.env.AIPANEL_AUTH_FILE = savedEnv;
+  if (savedDisabled === undefined) delete process.env.AIPANEL_AUTH_DISABLED;
+  else process.env.AIPANEL_AUTH_DISABLED = savedDisabled;
 });
 
 describe("hashPassword", () => {
@@ -104,9 +109,33 @@ describe("proxy with AIPANEL_AUTH_FILE set", () => {
     assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 200);
     assert.equal(tse.mock.callCount(), 1);
     // If the constant-time compare says no, the request is refused even with
-    // the right password: nothing else (e.g. ===) decides.
+    // the right password: nothing else (e.g. ===) decides. Covers the
+    // memoised path too (it compares digests with timingSafeEqual).
     tse.mock.mockImplementation(() => false);
     assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 401);
+    resetAuthState();
+    assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 401);
+  });
+
+  it("memoises the last good login: one scrypt, not one per request", async () => {
+    const scrypt = mock.method(crypto, "scrypt");
+    for (let i = 0; i < 3; i++) assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 200);
+    assert.equal(scrypt.mock.callCount(), 1);
+    // A different (wrong) header is not covered by the memo.
+    assert.equal((await proxy(req({ auth: basic(USER, "nope") }))).status, 401);
+    assert.equal(scrypt.mock.callCount(), 2);
+  });
+
+  it("drops the memo when the credentials file changes", async () => {
+    assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 200);
+    await writeCreds(USER, "rotated", new Date(Date.now() + 5_000));
+    assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 401);
+  });
+
+  it("ignores AIPANEL_AUTH_DISABLED when the file is set (file wins)", async () => {
+    process.env.AIPANEL_AUTH_DISABLED = "1";
+    assert.equal((await proxy(req({ path: "/api/debate" }))).status, 401);
+    assert.equal((await proxy(req({ auth: basic(USER, PASS) }))).status, 200);
   });
 
   it("runs scrypt even when the user is wrong (no username probing)", async () => {
@@ -121,43 +150,38 @@ describe("proxy with AIPANEL_AUTH_FILE unset", () => {
     delete process.env.AIPANEL_AUTH_FILE;
   });
 
-  for (const [xff, host] of [
-    ["127.0.0.1", "localhost:3000"],
-    ["::1", "[::1]:3000"],
-    ["::ffff:127.0.0.1", "127.0.0.1:3000"],
-  ]) {
-    it(`allows localhost (${xff}, Host ${host})`, async () => {
-      assert.equal((await proxy(req({ xff, host }))).status, 200);
-    });
-  }
-
   for (const [label, xff, host] of [
+    ["forged loopback X-Forwarded-For + Host", "127.0.0.1", "localhost:3000"],
+    ["IPv6 loopback", "::1", "[::1]:3000"],
     ["a LAN address", "192.168.68.42", "home.local:3201"],
-    ["a LAN address with a localhost Host", "192.168.68.42", "localhost:3000"],
-    ["loopback peer with a LAN Host (DNS rebinding)", "127.0.0.1", "evil.example:3000"],
-    ["a forwarded chain with a LAN hop", "192.168.68.42, 127.0.0.1", "localhost:3000"],
     ["no peer address", undefined, "localhost:3000"],
   ] as const) {
-    it(`refuses ${label} with 401 and a log line`, async () => {
+    it(`refuses ${label} with 401 and a log line naming AIPANEL_AUTH_FILE`, async () => {
       const warn = mock.method(console, "warn", () => {});
       const res = await proxy(req({ xff, host, auth: basic(USER, PASS) }));
       assert.equal(res.status, 401);
       assert.ok(res.headers.get("www-authenticate"));
       assert.equal(warn.mock.callCount(), 1);
-      assert.match(String(warn.mock.calls[0].arguments[0]), /AIPANEL_AUTH_FILE unset/);
+      assert.match(String(warn.mock.calls[0].arguments[0]), /AIPANEL_AUTH_FILE is unset; set it/);
     });
   }
+
+  it("only AIPANEL_AUTH_DISABLED=1 opens it, with a loud warning on the first request", async () => {
+    const warn = mock.method(console, "warn", () => {});
+    process.env.AIPANEL_AUTH_DISABLED = "true";
+    assert.equal((await proxy(req({ xff: "192.168.68.42" }))).status, 401);
+    process.env.AIPANEL_AUTH_DISABLED = "1";
+    assert.equal((await proxy(req({ xff: "192.168.68.42" }))).status, 200);
+    assert.equal((await proxy(req({}))).status, 200);
+    const loud = warn.mock.calls.filter((c) => /WITHOUT a login/.test(String(c.arguments[0])));
+    assert.equal(loud.length, 1);
+  });
 });
 
-describe("isLocalRequest / authorize", () => {
-  it("treats the whole 127/8 block as loopback", () => {
-    assert.equal(isLocalRequest(new Headers({ "x-forwarded-for": "127.0.0.2", host: "127.0.0.1" })), true);
-    assert.equal(isLocalRequest(new Headers({ "x-forwarded-for": "10.0.0.1", host: "127.0.0.1" })), false);
-  });
-
+describe("authorize", () => {
   it("returns a log line only for refusals worth logging", async () => {
     await writeCreds(USER, PASS);
-    const d = await authorize(new Headers({ authorization: basic(USER, "bad") }), authFile);
+    const d = await authorize(new Headers({ authorization: basic(USER, "bad") }), { AIPANEL_AUTH_FILE: authFile });
     assert.equal(d.ok, false);
     assert.equal(!d.ok && d.log, undefined);
   });

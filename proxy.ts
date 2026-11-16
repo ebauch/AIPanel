@@ -11,7 +11,7 @@ import { authorize, wwwAuthenticate } from "@/lib/basic-auth";
  * here too.
  */
 export async function proxy(request: NextRequest) {
-  const decision = await authorize(request.headers, process.env.AIPANEL_AUTH_FILE, request.nextUrl.pathname);
+  const decision = await authorize(request.headers, process.env, request.nextUrl.pathname);
   if (decision.ok) return NextResponse.next();
   if (decision.log) console.warn(decision.log);
   return new NextResponse(decision.message, {
