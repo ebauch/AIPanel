@@ -30,6 +30,18 @@ export const SUBSCRIPTION_PRESET = {
   ids: ["claude-cli:claude-opus-5-5", "codex-cli:gpt-6-astra"],
 } as const;
 
+/** Preset names the MCP tool accepts, default first. */
+export const PRESET_TIERS = ["subscriptions", "flagship", "balanced", "budget"] as const;
+
+export type PresetName = (typeof PRESET_TIERS)[number];
+
+export const PRESET_DESCRIPTIONS: Record<PresetName, string> = {
+  subscriptions: SUBSCRIPTION_PRESET.description,
+  flagship: "each vendor's flagship model (OpenRouter, per-token $)",
+  balanced: "mid-priced models (OpenRouter, per-token $)",
+  budget: "cheapest capable models (OpenRouter, per-token $)",
+};
+
 function isRecent(createdSec: number | undefined): boolean {
   if (!createdSec) {
     return false;

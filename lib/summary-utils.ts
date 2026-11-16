@@ -1,4 +1,4 @@
-import type { DebateModelInfo } from "./types";
+import type { DebateModelInfo, Takeaway } from "./types";
 
 export function pickDefaultSummaryModel(
   allModels: DebateModelInfo[],
@@ -24,4 +24,18 @@ export function pickDefaultSummaryModel(
   }
 
   return selectedModelIds[0] ?? "";
+}
+
+/** Every panel member backed the takeaway and nobody argued against it. */
+export function isBackedByWholePanel(
+  takeaway: Pick<Takeaway, "supporters" | "dissenters">,
+  panel: Array<{ modelDisplayName: string }>,
+): boolean {
+  if (panel.length === 0) {
+    return false;
+  }
+  return (
+    panel.every((member) => takeaway.supporters.includes(member.modelDisplayName)) &&
+    takeaway.dissenters.length === 0
+  );
 }

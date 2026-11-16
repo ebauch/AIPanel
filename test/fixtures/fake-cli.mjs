@@ -57,6 +57,10 @@ async function hang() {
 
 // A reply that proves which prompt the fake saw.
 function replyFor(prompt) {
+  // The takeaways prompt asks for JSON: answer with a canned summary if given.
+  if (process.env.FAKE_SUMMARY_JSON && prompt.includes("## Output format")) {
+    return process.env.FAKE_SUMMARY_JSON;
+  }
   const match = /REPLY_AS:(\S+)/.exec(prompt);
   const name = match ? match[1] : cli;
   const quoted = /QUOTE_ME:(\S+)/.exec(prompt);

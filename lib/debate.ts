@@ -234,9 +234,26 @@ async function* runDebateTurn(options: {
   return { text, usage };
 }
 
+/**
+ * Continue a saved debate instead of starting a new one: the prior transcript
+ * (which may end with a user follow-up, speakerIndex -1) is every speaker's
+ * context, and `config.rounds` more rounds of `iteration` are appended,
+ * numbered from `startRound`.
+ */
+export interface DebateResume {
+  transcript: TranscriptMessage[];
+  iteration: number;
+  startRound: number;
+}
+
 export async function* runDebate(
   config: DebateConfig,
-  options?: { apiKey?: string; signal?: AbortSignal; registry?: ProviderRegistry },
+  options?: {
+    apiKey?: string;
+    signal?: AbortSignal;
+    registry?: ProviderRegistry;
+    resume?: DebateResume;
+  },
 ): AsyncGenerator<DebateStreamEvent> {
   const apiKey = options?.apiKey;
   const registry = options?.registry ?? getRegistry();
@@ -264,16 +281,21 @@ export async function* runDebate(
     { providerIds },
   );
   const modelCatalog = new Map(models.map((model) => [model.id, model]));
-  const transcript: TranscriptMessage[] = [];
+  const resume = options?.resume;
+  const transcript: TranscriptMessage[] = resume ? [...resume.transcript] : [];
   const totalIterations = iterationCount(config);
+  const firstIteration = resume?.iteration ?? 1;
+  const lastIteration = resume?.iteration ?? totalIterations;
+  const firstRound = resume?.startRound ?? 1;
+  const lastRound = firstRound + config.rounds - 1;
 
   yield {
     type: "debate_start",
     totalIterations,
-    rounds: config.rounds,
+    rounds: lastRound,
   };
 
-  for (let iteration = 1; iteration <= totalIterations; iteration += 1) {
+  for (let iteration = firstIteration; iteration <= lastIteration; iteration += 1) {
     if (options?.signal?.aborted) {
       return;
     }
@@ -290,7 +312,7 @@ export async function* runDebate(
       })),
     };
 
-    for (let round = 1; round <= config.rounds; round += 1) {
+    for (let round = firstRound; round <= lastRound; round += 1) {
       if (options?.signal?.aborted) {
         return;
       }
