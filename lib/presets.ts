@@ -17,9 +17,18 @@ export interface PanelPresets {
   flagship: string[];
   balanced: string[];
   budget: string[];
+  /** "Opus 5.5 vs Astra (subscriptions)": empty unless both models are enabled. */
+  subscriptions: string[];
 }
 
-export type PresetTier = "flagship" | "balanced" | "budget" | "custom";
+export type PresetTier = "flagship" | "balanced" | "budget" | "subscriptions" | "custom";
+
+/** Claude Max (claude CLI) vs ChatGPT Pro (codex CLI): no per-token spend. */
+export const SUBSCRIPTION_PRESET = {
+  label: "Opus 5.5 vs Astra",
+  description: "Opus 5.5 vs Astra (subscriptions)",
+  ids: ["claude-cli:claude-opus-5-5", "codex-cli:gpt-6-astra"],
+} as const;
 
 function isRecent(createdSec: number | undefined): boolean {
   if (!createdSec) {
@@ -122,7 +131,12 @@ function pickBudget(
  * contributing to flagship/balanced).
  */
 export function buildPresets(models: DebateModelInfo[]): PanelPresets {
-  const result: PanelPresets = { flagship: [], balanced: [], budget: [] };
+  const result: PanelPresets = { flagship: [], balanced: [], budget: [], subscriptions: [] };
+
+  const usable = (id: string) => models.some((model) => model.id === id && model.available);
+  if (SUBSCRIPTION_PRESET.ids.every(usable)) {
+    result.subscriptions = [...SUBSCRIPTION_PRESET.ids];
+  }
 
   for (const provider of PRESET_PROVIDERS) {
     const flagship = pickFlagship(models, provider);
@@ -174,6 +188,9 @@ export function detectPreset(
   }
   if (matches(presets.budget)) {
     return "budget";
+  }
+  if (matches(presets.subscriptions)) {
+    return "subscriptions";
   }
   return "custom";
 }

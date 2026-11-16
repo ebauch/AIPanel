@@ -16,6 +16,7 @@ import {
   writePromptOverride,
 } from "@/lib/prompt-store";
 import { clearApiKey, readApiKey, writeApiKey } from "@/lib/api-key-store";
+import { ProviderSettings } from "./ProviderSettings";
 
 function ApiKeySection() {
   const [key, setKey] = useState(() => readApiKey() ?? "");
@@ -167,7 +168,7 @@ export default function SettingsPage() {
           Settings
         </p>
         <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Prompt templates
+          Providers, models and prompts
         </h1>
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Edit debate and summary prompts locally. Changes apply to the next run
@@ -178,6 +179,8 @@ export default function SettingsPage() {
           page.
         </p>
       </div>
+
+      <ProviderSettings />
 
       <ApiKeySection />
 
