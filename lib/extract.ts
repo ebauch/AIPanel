@@ -276,15 +276,45 @@ function resolveLocalPath(ref: string, cwd: string): string {
 }
 
 /**
+ * Local documents may only come from under `root` (the home dir by default)
+ * and never from a dotfile or dot-directory (.env.local, .ssh, .aws,
+ * .claude...): document text is sent to the panel's models, so a prompt-
+ * injected session must not be able to ship secrets that way. Symlinks are
+ * resolved first. Returns an error message, or null.
+ */
+function checkLocalPathAllowed(ref: string, file: string, root: string): string | null {
+  let real: string;
+  let realRoot: string;
+  try {
+    real = fs.realpathSync(file);
+    realRoot = fs.realpathSync(root);
+  } catch {
+    return `${ref}: does not exist or is not readable.`;
+  }
+  const relative = path.relative(realRoot, real);
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) {
+    return `${ref}: only files under ${root} can be attached.`;
+  }
+  if (relative.split(path.sep).some((part) => part.startsWith("."))) {
+    return `${ref}: hidden files and folders (dotfiles such as .env or .ssh) cannot be attached.`;
+  }
+  return null;
+}
+
+/**
  * Check a document reference (local path or URL) before a debate is queued.
  * Returns an error message, or null when it looks usable.
  */
-export function checkDocumentRef(ref: string, cwd = process.cwd()): string | null {
+export function checkDocumentRef(ref: string, cwd = process.cwd(), root = os.homedir()): string | null {
   if (isUrlRef(ref)) {
     const validated = validateUrl(ref);
     return "error" in validated ? `${ref}: ${validated.error}` : null;
   }
   const file = resolveLocalPath(ref, cwd);
+  const notAllowed = checkLocalPathAllowed(ref, file, root);
+  if (notAllowed) {
+    return notAllowed;
+  }
   try {
     fs.accessSync(file, fs.constants.R_OK);
     const stat = fs.statSync(file);
@@ -301,12 +331,20 @@ export function checkDocumentRef(ref: string, cwd = process.cwd()): string | nul
 }
 
 /** Load a local file (PDF or text) or a URL as a labeled document. */
-export async function loadDocumentRef(ref: string, cwd = process.cwd()): Promise<LabeledDocument> {
+export async function loadDocumentRef(
+  ref: string,
+  cwd = process.cwd(),
+  root = os.homedir(),
+): Promise<LabeledDocument> {
   if (isUrlRef(ref)) {
     const result = await fetchUrlText(ref);
     return { label: result.label, content: result.text, source: ref };
   }
   const file = resolveLocalPath(ref, cwd);
+  const notAllowed = checkLocalPathAllowed(ref, file, root);
+  if (notAllowed) {
+    throw new Error(notAllowed);
+  }
   const bytes = fs.readFileSync(file);
   if (file.toLowerCase().endsWith(".pdf") || bytes.subarray(0, 5).toString("latin1") === "%PDF-") {
     const result = await extractPdfText(new Uint8Array(bytes), path.basename(file));

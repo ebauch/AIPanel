@@ -126,9 +126,11 @@ export async function* recordSummary(
   store: DebateStore,
   id: string,
   events: AsyncIterable<DebateStreamEvent>,
+  /** The model asked to summarize, so a failure before summary_start still names it. */
+  intendedModelId = "",
 ): AsyncGenerator<DebateStreamEvent> {
-  let modelId = "";
-  let modelDisplayName = "";
+  let modelId = intendedModelId;
+  let modelDisplayName = intendedModelId;
   for await (const event of events) {
     if (event.type === "summary_start") {
       modelId = event.modelId;
@@ -182,7 +184,7 @@ export async function summarizeSavedDebate(id: string, deps: RunnerDeps): Promis
     },
     { apiKey: deps.apiKey, signal: deps.signal, registry },
   );
-  await drain(recordSummary(store, id, events), deps.onEvent);
+  await drain(recordSummary(store, id, events, modelId), deps.onEvent);
 }
 
 export interface StartDebateInput {

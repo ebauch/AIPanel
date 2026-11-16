@@ -48,6 +48,8 @@ export interface McpDeps {
   timeoutMs?: number;
   /** Base for relative document paths. */
   cwd?: string;
+  /** Local documents must live under this dir (default: the home dir). */
+  documentRoot?: string;
 }
 
 const CONTINUE_SCHEMA: JsonSchema = {
@@ -298,15 +300,19 @@ export function createAipanelServer(deps: McpDeps): Server {
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: toolDefinitions() as never }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
-    const args = (request.params.arguments ?? {}) as Record<string, unknown>;
+    const args = { ...(request.params.arguments ?? {}) } as Record<string, unknown>;
     try {
       switch (request.params.name) {
         case "debate": {
+          // The picker keeps OpenRouter ids bare; accept the explicit prefix (as for models).
+          if (typeof args.summaryModelId === "string") {
+            args.summaryModelId = args.summaryModelId.trim().replace(/^openrouter:/, "");
+          }
           const errors = validateAgainstSchema(args, debateToolInputSchema());
           const docRefs = (Array.isArray(args.documents) ? args.documents : []) as string[];
           if (errors.length === 0) {
             for (const ref of docRefs) {
-              const problem = checkDocumentRef(ref, deps.cwd);
+              const problem = checkDocumentRef(ref, deps.cwd, deps.documentRoot);
               if (problem) {
                 errors.push(problem);
               }
@@ -321,7 +327,7 @@ export function createAipanelServer(deps: McpDeps): Server {
           const { record, note } = await runQueued(extra, settings.rounds * iterations, settings.summarize, async (signal, onEvent) => {
             const documents: LabeledDocument[] = [];
             for (const ref of docRefs) {
-              documents.push(await loadDocumentRef(ref, deps.cwd));
+              documents.push(await loadDocumentRef(ref, deps.cwd, deps.documentRoot));
             }
             return startSavedDebate(
               {

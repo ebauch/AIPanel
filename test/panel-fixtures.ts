@@ -10,7 +10,22 @@ import { createClaudeCliProvider } from "@/lib/providers/claude-cli";
 import { createCodexCliProvider } from "@/lib/providers/codex-cli";
 import { createOpenRouterProvider } from "@/lib/providers/openrouter";
 import { createRegistry } from "@/lib/providers/registry";
+import type { DebateModelInfo } from "@/lib/types";
 import { makeFakeCli } from "./helpers";
+
+/** A per-token OpenRouter model that the old default summary pick preferred. */
+export const PER_TOKEN_FABLE: DebateModelInfo = {
+  id: "anthropic/claude-fable-5",
+  displayName: "Anthropic: Claude Fable 5",
+  available: true,
+  recommended: true,
+  supportsReasoningEffort: true,
+  supportsJsonResponse: false,
+  provider: "anthropic",
+  contextLength: 200_000,
+  pricing: { promptPerMillion: 15, completionPerMillion: 75 },
+  created: Math.floor(Date.now() / 1000),
+};
 
 export const SUMMARY_JSON = JSON.stringify({
   verdict: "Ship on Monday, not Friday.",
@@ -51,7 +66,8 @@ export function makePanel(options: { claudeScenario?: string; codexScenario?: st
       createClaudeCliProvider({ bin: claude.bin, env: claude.env(options.claudeScenario ?? "ok", extra) }),
       createCodexCliProvider({ bin: codex.bin, env: codex.env(options.codexScenario ?? "ok", extra) }),
       createOpenRouterProvider({
-        listDebateModels: async () => ({ models: [] }),
+        // Listed even without a key, as the real catalog is.
+        listDebateModels: async () => ({ models: [PER_TOKEN_FABLE] }),
         streamChatCompletion: async () => {
           throw new Error("OpenRouter must not be called in these tests");
         },

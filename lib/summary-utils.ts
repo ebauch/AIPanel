@@ -1,9 +1,25 @@
 import type { DebateModelInfo, Takeaway } from "./types";
 
+const SUBSCRIPTION_ID_PATTERN = /^(claude-cli|codex-cli):/;
+const SUBSCRIPTION_OPUS_PATTERN = /^claude-cli:claude-opus/;
+
+/**
+ * The takeaways model when none was chosen. A panel made only of
+ * subscription models must never fall through to a per-token (OpenRouter)
+ * summarizer: that would spend money on a debate that is otherwise free.
+ */
 export function pickDefaultSummaryModel(
   allModels: DebateModelInfo[],
   selectedModelIds: string[],
 ): string {
+  const isSubscription = (id: string) => {
+    const model = allModels.find((entry) => entry.id === id);
+    return model ? model.billing === "subscription" : SUBSCRIPTION_ID_PATTERN.test(id);
+  };
+  if (selectedModelIds.length > 0 && selectedModelIds.every(isSubscription)) {
+    return selectedModelIds.find((id) => SUBSCRIPTION_OPUS_PATTERN.test(id)) ?? selectedModelIds[0];
+  }
+
   const recommendedFable = allModels.find(
     (model) => model.recommended && /anthropic\/claude-fable/i.test(model.id),
   );

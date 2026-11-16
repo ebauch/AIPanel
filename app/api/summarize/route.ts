@@ -32,7 +32,7 @@ export async function POST(request: Request) {
         const summary = runSummary(body, { apiKey, signal: request.signal });
         const events =
           typeof body.debateId === "string" && isDebateId(body.debateId)
-            ? recordSummary(getDebateStore(), body.debateId, summary)
+            ? recordSummary(getDebateStore(), body.debateId, summary, body.modelId)
             : summary;
         for await (const event of events) {
           controller.enqueue(encodeSse(event));

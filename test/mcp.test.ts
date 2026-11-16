@@ -14,12 +14,18 @@ import {
 } from "@/lib/debate-settings";
 import { DEBATE_MODES, REASONING_EFFORTS } from "@/lib/types";
 import { createAipanelServer, type McpDeps } from "@/mcp/tools";
-import { makePanel, PANEL, starts } from "./panel-fixtures";
+import { pickDefaultSummaryModel } from "@/lib/summary-utils";
+import { makePanel, PANEL, PER_TOKEN_FABLE, starts } from "./panel-fixtures";
 
 type Panel = ReturnType<typeof makePanel>;
 
 async function connect(panel: Panel, extra: Partial<McpDeps> = {}) {
-  const server = createAipanelServer({ store: panel.store, registry: panel.registry, ...extra });
+  const server = createAipanelServer({
+    store: panel.store,
+    registry: panel.registry,
+    documentRoot: os.tmpdir(),
+    ...extra,
+  });
   const client = new Client({ name: "test", version: "1.0.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -111,6 +117,10 @@ describe("MCP server: tools", () => {
     assert.equal(record.preset, "subscriptions");
     assert.deepEqual(record.modelIds, PANEL);
     assert.deepEqual(record.settings, { ...DEFAULT_DEBATE_SETTINGS, rounds: 2 });
+    // An all-subscription panel is summarized by a subscription model, never
+    // the per-token Fable that the (keyless) OpenRouter catalog offers.
+    assert.equal(record.summary?.modelId, "claude-cli:claude-opus-5-5");
+    assert.equal(record.cost.usd, 0);
     assert.equal(record.documents[0].source, doc);
     assert.match(String(starts(panel.claude)[0].argv), /DOC_MARKER_42/);
 
@@ -156,11 +166,20 @@ describe("MCP server: tools", () => {
 
   it("rejects invalid input before running anything", async () => {
     const panel = makePanel();
+    const docs = fs.mkdtempSync(path.join(os.tmpdir(), "aipanel-docs-"));
+    const dotfile = path.join(docs, ".env.local");
+    fs.writeFileSync(dotfile, "SECRET=1");
+    fs.mkdirSync(path.join(docs, ".ssh"));
+    const inDotDir = path.join(docs, ".ssh", "notes.txt");
+    fs.writeFileSync(inDotDir, "key");
     const client = await connect(panel);
     const cases: Array<[Record<string, unknown>, RegExp]> = [
       [{ question: "   " }, /question must not be empty/],
       [{ question: "x".repeat(20_001) }, /question must be at most 20,000 characters/],
       [{ question: "Q", documents: ["/no/such/file.pdf"] }, /does not exist or is not readable/],
+      [{ question: "Q", documents: ["/etc/hosts"] }, /only files under/],
+      [{ question: "Q", documents: [dotfile] }, /hidden files and folders/],
+      [{ question: "Q", documents: [inDotDir] }, /hidden files and folders/],
       [{ question: "Q", documents: ["file:///etc/hosts"] }, /Only http and https URLs/],
       [{ question: "Q", documents: ["ftp://example.com/x"] }, /Only http and https URLs/],
       [{ question: "Q", models: ["claude-cli:claude-opus-5-5", "codex-cli:gpt-9"] }, /Not enabled.*codex-cli:gpt-9/],
@@ -171,6 +190,7 @@ describe("MCP server: tools", () => {
       [{ question: "Q", stances: [{ label: "x" }] }, /stances\[0\]\.instruction is required/],
       [{ question: "Q", colour: "blue" }, /colour is not a known field/],
       [{ question: "Q", summaryModelId: "claude-cli:nope" }, /summaryModelId claude-cli:nope is not enabled/],
+      [{ question: "Q", summaryModelId: "openrouter:x/missing" }, /summaryModelId x\/missing is not enabled/],
     ];
     for (const [args, pattern] of cases) {
       const { text, isError } = await call(client, "debate", args);
@@ -201,7 +221,11 @@ describe("MCP server: tools", () => {
     assert.match(next.text, new RegExp(`Debate id: ${id}`));
     assert.match(next.text, /claude argues \(heard mondays\?\)/);
     assert.equal(progress[0], "Round 2 done (1 of 1).");
-    assert.equal(panel.store.load(id)!.turns.length, 5);
+    const continued = panel.store.load(id)!;
+    assert.equal(continued.turns.length, 5);
+    assert.equal(continued.summary?.modelId, "claude-cli:claude-opus-5-5");
+    assert.equal(continued.summary?.takeaways?.verdict, "Ship on Monday, not Friday.");
+    assert.equal(continued.cost.usd, 0);
 
     const listed = JSON.parse((await call(client, "list_debates", { limit: 5 })).text);
     assert.equal(listed.total, 1);
@@ -247,6 +271,17 @@ describe("MCP server: tools", () => {
     assert.equal(record.status, "stopped");
     assert.equal(record.turns.length, 0);
     assert.equal(record.summary, null);
+  });
+});
+
+describe("default summary model", () => {
+  it("keeps an all-subscription panel on a subscription summarizer", () => {
+    const sub = (id: string) => ({ ...PER_TOKEN_FABLE, id, recommended: false, billing: "subscription" as const });
+    const catalog = [PER_TOKEN_FABLE, sub(PANEL[0]), sub(PANEL[1]), sub("codex-cli:gpt-6.1-sol")];
+    assert.equal(pickDefaultSummaryModel(catalog, [PANEL[1], PANEL[0]]), PANEL[0], "Opus when on the panel");
+    assert.equal(pickDefaultSummaryModel(catalog, [PANEL[1], "codex-cli:gpt-6.1-sol"]), PANEL[1], "else the first");
+    // Mixed or per-token panels keep the old pick.
+    assert.equal(pickDefaultSummaryModel(catalog, [PANEL[0], "openai/gpt-6"]), PER_TOKEN_FABLE.id);
   });
 });
 

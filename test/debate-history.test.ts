@@ -238,6 +238,16 @@ describe("saved debates with fake subscription CLIs", () => {
     assert.equal(continued.status, "done");
   });
 
+  it("a summary that fails before it starts still records which model it asked", async () => {
+    const { registry, store } = makePanel();
+    const record = await startSavedDebate(
+      { ...newInput(), settings: { ...settings, summaryModelId: "anthropic/claude-fable-5" } },
+      { store, registry },
+    );
+    assert.match(record.summary?.error ?? "", /No OpenRouter API key/);
+    assert.equal(record.summary?.modelId, "anthropic/claude-fable-5");
+  });
+
   it("refuses to continue a debate that is still running, and validates options", async () => {
     const { registry, store } = makePanel();
     const record = store.create(newInput());

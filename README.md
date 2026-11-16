@@ -195,7 +195,10 @@ Tools:
   web-form setting }`, all optional except the question. Explicit arguments
   win over the preset (which picks the panel), which wins over the app's
   defaults; the default preset is "Opus 5.5 vs Astra (subscriptions)".
-  `documents` are local file paths (PDF or text) or http(s) URLs. Returns the
+  `documents` are local file paths (PDF or text, under your home dir, no
+  dotfiles or dot-folders such as `.env*` or `.ssh`) or http(s) URLs. An
+  all-subscription panel is also summarized by a subscription model (Opus
+  when it is on the panel), so it never costs per-token money. Returns the
   verdict, the to-dos every model backed, open disagreements, each model's
   stance, the cost, the transcript path and the debate id. Sends a progress
   notification per round; stops after 30 minutes (what ran is kept). One
