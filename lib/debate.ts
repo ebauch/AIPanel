@@ -1,6 +1,9 @@
 import { AsyncQueue } from "./async-queue";
-import { listDebateModels } from "./models";
-import { OpenRouterError, streamChatCompletion } from "./openrouter";
+import { OpenRouterError } from "./openrouter";
+import { OPENROUTER_PROVIDER_ID } from "./providers/model-id";
+import { MISSING_OPENROUTER_KEY_MESSAGE } from "./providers/openrouter";
+import { getRegistry, type ProviderRegistry } from "./providers/registry";
+import { collectStream, ProviderError } from "./providers/types";
 import { buildRebuttalMessages, buildSeedMessages } from "./prompts";
 import { DEFAULT_STANCES } from "./stances";
 import type {
@@ -102,14 +105,16 @@ async function sleep(ms: number): Promise<void> {
 }
 
 function isRetryableError(err: unknown): boolean {
-  if (err instanceof OpenRouterError) {
+  if (err instanceof OpenRouterError || err instanceof ProviderError) {
     return err.retryable;
   }
   return false;
 }
 
+
 async function* runDebateTurn(options: {
-  apiKey: string;
+  registry: ProviderRegistry;
+  apiKey: string | undefined;
   assignment: DebaterAssignment;
   modelInfo: DebateModelInfo | undefined;
   reasoningEffort: DebateConfig["reasoningEffort"];
@@ -141,54 +146,58 @@ async function* runDebateTurn(options: {
   let sawContentToken = false;
   let finalResult: { text: string; usage: TokenUsage | null } | null = null;
 
-  void streamChatCompletion({
-    apiKey: options.apiKey,
-    model: options.assignment.modelId,
-    messages: options.messages,
-    reasoningEffort: options.reasoningEffort,
-    supportsReasoningEffort: options.modelInfo?.supportsReasoningEffort ?? false,
-    signal: options.signal,
-    onRetry: ({ attempt, maxAttempts, delayMs, rateLimited }) => {
-      queue.push({
-        type: "activity",
-        iteration: options.iteration,
-        round: options.round,
-        speakerIndex: options.speakerIndex,
-        message: rateLimited
-          ? `Rate limited by the provider, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt} of ${maxAttempts})…`
-          : `Temporary error, retrying in ${Math.round(delayMs / 1000)}s (attempt ${attempt} of ${maxAttempts})…`,
-      });
-    },
-    onReasoning: (text) => {
-      if (!sawReasoningActivity && !sawContentToken) {
-        sawReasoningActivity = true;
+  void collectStream(
+    options.registry.stream(
+      options.assignment.modelId,
+      {
+        messages: options.messages,
+        reasoningEffort: options.reasoningEffort,
+        modelInfo: options.modelInfo,
+        signal: options.signal,
+      },
+      { openRouterApiKey: options.apiKey },
+    ),
+    {
+      onActivity: (message) => {
         queue.push({
           type: "activity",
           iteration: options.iteration,
           round: options.round,
           speakerIndex: options.speakerIndex,
-          message: "Thinking…",
+          message,
         });
-      }
-      queue.push({
-        type: "reasoning",
-        iteration: options.iteration,
-        round: options.round,
-        speakerIndex: options.speakerIndex,
-        text,
-      });
+      },
+      onReasoning: (text) => {
+        if (!sawReasoningActivity && !sawContentToken) {
+          sawReasoningActivity = true;
+          queue.push({
+            type: "activity",
+            iteration: options.iteration,
+            round: options.round,
+            speakerIndex: options.speakerIndex,
+            message: "Thinking…",
+          });
+        }
+        queue.push({
+          type: "reasoning",
+          iteration: options.iteration,
+          round: options.round,
+          speakerIndex: options.speakerIndex,
+          text,
+        });
+      },
+      onToken: (text) => {
+        sawContentToken = true;
+        queue.push({
+          type: "token",
+          iteration: options.iteration,
+          round: options.round,
+          speakerIndex: options.speakerIndex,
+          text,
+        });
+      },
     },
-    onToken: (text) => {
-      sawContentToken = true;
-      queue.push({
-        type: "token",
-        iteration: options.iteration,
-        round: options.round,
-        speakerIndex: options.speakerIndex,
-        text,
-      });
-    },
-  }).then(
+  ).then(
     (value) => {
       finalResult = value;
       queue.close();
@@ -227,15 +236,17 @@ async function* runDebateTurn(options: {
 
 export async function* runDebate(
   config: DebateConfig,
-  options?: { apiKey?: string; signal?: AbortSignal },
+  options?: { apiKey?: string; signal?: AbortSignal; registry?: ProviderRegistry },
 ): AsyncGenerator<DebateStreamEvent> {
   const apiKey = options?.apiKey;
+  const registry = options?.registry ?? getRegistry();
+  const providerIds = registry.providerIdsFor(config.modelIds ?? []);
 
-  if (!apiKey) {
+  // Only OpenRouter needs a key; a debate between subscription CLIs runs without one.
+  if (!apiKey && providerIds.includes(OPENROUTER_PROVIDER_ID)) {
     yield {
       type: "error",
-      message:
-        "No OpenRouter API key. Add one on the Settings page or set OPENROUTER_API_KEY in .env.local.",
+      message: MISSING_OPENROUTER_KEY_MESSAGE,
     };
     return;
   }
@@ -248,7 +259,10 @@ export async function* runDebate(
     return;
   }
 
-  const { models } = await listDebateModels(apiKey);
+  const { models } = await registry.listModels(
+    { openRouterApiKey: apiKey },
+    { providerIds },
+  );
   const modelCatalog = new Map(models.map((model) => [model.id, model]));
   const transcript: TranscriptMessage[] = [];
   const totalIterations = iterationCount(config);
@@ -361,6 +375,7 @@ export async function* runDebate(
 
             try {
               const turnGenerator = runDebateTurn({
+                registry,
                 apiKey,
                 assignment,
                 modelInfo,

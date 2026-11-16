@@ -84,7 +84,9 @@ Or just click one of the **Examples** to see it in action.
 app/
   api/debate/route.ts     # SSE streaming POST endpoint for a full debate
   api/summarize/route.ts  # SSE streaming POST endpoint for the takeaways
-  api/models/route.ts     # GET available OpenRouter models
+  api/models/route.ts     # GET picker models (enabled subscription models + OpenRouter catalog)
+  api/providers/          # GET provider status; POST test/ = one tiny call
+  api/settings/models/    # GET/PUT enabled models (server-side JSON file)
   api/fetch-url/route.ts  # POST a URL, get back extracted text
   api/extract-pdf/route.ts# POST a PDF, get back extracted text
   page.tsx                # Debate form + live transcript + results UI
@@ -94,6 +96,8 @@ lib/
   debate.ts               # Orchestrator (stances, turns, rounds, iterations)
   summarize.ts            # Takeaways generation (JSON parsing, validation)
   openrouter.ts           # OpenRouter HTTP client (streaming chat completions)
+  providers/              # Provider interface + registry: openrouter, claude-cli, codex-cli
+  model-settings.ts       # Enabled-models store (validation, JSON file)
   models.ts               # Model catalog: filtering, recommended flagships
   presets.ts               # Flagship/Balanced/Budget panel presets
   prompts.ts               # Prompt/message builders (seed, rebuttal, takeaways)
@@ -125,6 +129,33 @@ picking any other combination of models shows as "Custom." The cost estimate
 also assumes repeat turns from the same model reuse the cached documents (see
 below) where the provider supports it.
 
+## Subscription providers (Claude Max, ChatGPT Pro)
+
+Besides OpenRouter, models can run through the logged-in `claude` (Claude
+Code) and `codex` CLIs on the machine that hosts the app, so turns are paid
+by a Claude Max / ChatGPT Pro subscription instead of per token. Model ids are
+`provider:model`, e.g. `claude-cli:claude-opus-5-5` or `codex-cli:gpt-6-astra`
+(OpenRouter ids stay bare, so old selections keep working).
+
+- **Settings → Providers** shows whether each CLI is found and logged in, with
+  a **Test** button that sends one tiny prompt.
+- **Settings → Models** lists the enabled models (stored server-side in
+  `data/model-settings.json`, gitignored; override the dir with
+  `AIPANEL_DATA_DIR`). They appear in the debate picker under
+  "Subscription models", next to the **Opus 5.5 vs Astra** preset.
+- Binary paths default to `/usr/local/bin/claude` and `/usr/local/bin/codex`;
+  override with `AIPANEL_CLAUDE_BIN` / `AIPANEL_CODEX_BIN`.
+- The CLIs run with no tools, in an empty temp directory, one call at a time
+  per CLI, with a 10-minute timeout. `claude` runs with `--safe-mode` (no
+  CLAUDE.md, hooks, plugins or skills from `~/.claude`); `codex` ignores
+  `~/.codex/config.toml` and execpolicy rules. API keys and per-token reroutes
+  (`ANTHROPIC_API_KEY`, `ANTHROPIC_BASE_URL`, `CLAUDE_CODE_USE_BEDROCK`/`VERTEX`,
+  `OPENAI_API_KEY`, `OPENAI_BASE_URL`, …) are removed from their environment,
+  and Settings flags a CLI logged in with an API key. Cost shows as
+  "subscription" rather than a dollar amount.
+- The app has no login: anyone who can reach it can start debates and test
+  calls on your subscriptions. Keep it on localhost or a trusted network.
+
 ## Memory, rate limits, and failed turns
 
 By default each debater is reminded of its own earlier responses in the
@@ -142,6 +173,8 @@ a rejected request) stop the run and show the provider's message.
 ## Build
 
 ```bash
+npm run lint
+npm test        # node --test via tsx; CLI providers are tested against fake binaries
 npm run build
 npm start
 ```

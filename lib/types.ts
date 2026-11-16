@@ -111,7 +111,14 @@ export interface DebateModelInfo {
   recommended: boolean;
   supportsReasoningEffort: boolean;
   supportsJsonResponse: boolean;
+  /** Grouping key in the picker: the vendor for OpenRouter models ("anthropic"), the provider id otherwise ("claude-cli"). */
   provider: string;
+  /** Which backend serves the model (lib/providers). Absent means OpenRouter. */
+  providerId?: string;
+  /** "subscription" = paid by a Claude Max / ChatGPT Pro login, no per-token $. */
+  billing?: "per-token" | "subscription";
+  /** Per-model effort from the settings store (subscription CLIs). */
+  effort?: string;
   contextLength: number;
   pricing: ModelPricing;
   created?: number;
@@ -125,6 +132,8 @@ export interface TokenUsage {
   cachedTokens?: number;
   /** Prompt tokens written to a provider's prompt cache on this turn (Anthropic). */
   cacheWriteTokens?: number;
+  /** Set for subscription CLI turns: cost is null and the UI shows "subscription". */
+  billing?: "subscription";
 }
 
 export interface TranscriptMessage {

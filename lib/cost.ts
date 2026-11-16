@@ -100,6 +100,18 @@ export function formatUsd(amount: number): string {
   return `$${amount.toFixed(2)}`;
 }
 
+/**
+ * Money spent so far. Subscription CLI calls have no $ amount, so they are
+ * counted instead of being shown as a misleading $0.00.
+ */
+export function formatSpend(usd: number, subscriptionCalls: number): string {
+  if (subscriptionCalls <= 0) {
+    return formatUsd(usd);
+  }
+  const calls = `${subscriptionCalls} subscription call${subscriptionCalls === 1 ? "" : "s"}`;
+  return usd > 0 ? `${formatUsd(usd)} + ${calls}` : calls;
+}
+
 export function formatTokenCount(count: number): string {
   if (count >= 1_000_000) {
     return `${(count / 1_000_000).toFixed(1)}m`;

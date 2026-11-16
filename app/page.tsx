@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import type {
   DebateConfig,
   DebateMode,
@@ -18,13 +19,19 @@ import type {
 } from "@/lib/types";
 import { readPromptOverrides } from "@/lib/prompt-store";
 import { pickDefaultSummaryModel } from "@/lib/summary-utils";
-import { buildPresets, detectPreset, type PresetTier } from "@/lib/presets";
+import {
+  buildPresets,
+  detectPreset,
+  SUBSCRIPTION_PRESET,
+  type PresetTier,
+} from "@/lib/presets";
 import { apiHeaders } from "@/lib/api-key-store";
 import { DEFAULT_STANCES } from "@/lib/stances";
 import { MAX_DOCUMENT_CHARS } from "@/lib/limits";
 import {
   estimateDebateCost,
   formatTokenCount,
+  formatSpend,
   formatUsd,
 } from "@/lib/cost";
 import type { DebateExample, ExamplesIndex } from "@/lib/examples";
@@ -172,6 +179,8 @@ const PROVIDER_DISPLAY_NAMES: Record<string, string> = {
   qwen: "Qwen",
   "meta-llama": "Meta",
   mistralai: "Mistral AI",
+  "claude-cli": "Claude · Max subscription",
+  "codex-cli": "ChatGPT · Pro subscription",
 };
 
 function formatProviderName(provider: string): string {
@@ -204,6 +213,9 @@ function trimNumber(value: number): string {
 }
 
 function formatPricing(model: DebateModelInfo): string {
+  if (model.billing === "subscription") {
+    return "subscription";
+  }
   return `$${trimNumber(model.pricing.promptPerMillion)} / $${trimNumber(
     model.pricing.completionPerMillion,
   )} per M tokens`;
@@ -506,7 +518,11 @@ function TurnCard({ turn }: { turn: TurnBlock }) {
               ? ` (${formatTokenCount(turn.usage.cachedTokens)} cached)`
               : ""
           } / out ${formatTokenCount(turn.usage.completionTokens)}${
-            turn.usage.cost !== null ? ` · ${formatUsd(turn.usage.cost)}` : ""
+            turn.usage.cost !== null
+              ? ` · ${formatUsd(turn.usage.cost)}`
+              : turn.usage.billing === "subscription"
+                ? " · subscription"
+                : ""
           }`}
         </p>
       )}
@@ -559,11 +575,14 @@ export default function HomePage() {
     tokens: number;
     promptTokens: number;
     cachedTokens: number;
+    /** Calls paid by a subscription CLI (no $ amount). */
+    subscriptionCalls: number;
   }>({
     usd: 0,
     tokens: 0,
     promptTokens: 0,
     cachedTokens: 0,
+    subscriptionCalls: 0,
   });
   const [panelRoster, setPanelRoster] = useState<PanelEntry[]>([]);
   const [runRounds, setRunRounds] = useState(0);
@@ -698,12 +717,33 @@ export default function HomePage() {
     return [...byIteration.entries()].sort(([a], [b]) => a - b);
   }, [turns]);
 
+  // Subscription CLI models (enabled in Settings) get their own section above
+  // the OpenRouter catalog, grouped by provider.
+  const subscriptionModelsByProvider = useMemo(() => {
+    const groups = new Map<string, DebateModelInfo[]>();
+    for (const model of models) {
+      if (model.billing !== "subscription") {
+        continue;
+      }
+      if (!groups.has(model.provider)) {
+        groups.set(model.provider, []);
+      }
+      groups.get(model.provider)!.push(model);
+    }
+    return [...groups.entries()];
+  }, [models]);
   const topModels = useMemo(
-    () => models.filter((model) => model.recommended),
+    () =>
+      models.filter(
+        (model) => model.recommended && model.billing !== "subscription",
+      ),
     [models],
   );
   const moreModels = useMemo(
-    () => models.filter((model) => !model.recommended),
+    () =>
+      models.filter(
+        (model) => !model.recommended && model.billing !== "subscription",
+      ),
     [models],
   );
   const moreModelsByProvider = useMemo(() => {
@@ -1126,6 +1166,9 @@ export default function HomePage() {
                 current.tokens + usage.promptTokens + usage.completionTokens,
               promptTokens: current.promptTokens + usage.promptTokens,
               cachedTokens: current.cachedTokens + (usage.cachedTokens ?? 0),
+              subscriptionCalls:
+                current.subscriptionCalls +
+                (usage.billing === "subscription" ? 1 : 0),
             }));
           }
         }
@@ -1389,6 +1432,9 @@ export default function HomePage() {
                 current.tokens + usage.promptTokens + usage.completionTokens,
               promptTokens: current.promptTokens + usage.promptTokens,
               cachedTokens: current.cachedTokens + (usage.cachedTokens ?? 0),
+              subscriptionCalls:
+                current.subscriptionCalls +
+                (usage.billing === "subscription" ? 1 : 0),
             }));
           }
         }
@@ -1445,7 +1491,13 @@ export default function HomePage() {
     setStatus("loading");
     setStatusMessage("Starting debate…");
     setErrorRetryable(false);
-    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
+    setCostSoFar({
+      usd: 0,
+      tokens: 0,
+      promptTokens: 0,
+      cachedTokens: 0,
+      subscriptionCalls: 0,
+    });
     setPanelRoster([]);
     setShowDebateInResults(false);
     setCurrentRound(0);
@@ -1550,7 +1602,13 @@ export default function HomePage() {
     setSummaryUsage(null);
     setStatus("idle");
     setStatusMessage(null);
-    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
+    setCostSoFar({
+      usd: 0,
+      tokens: 0,
+      promptTokens: 0,
+      cachedTokens: 0,
+      subscriptionCalls: 0,
+    });
     setPanelRoster([]);
     setShowDebateInResults(false);
     setElapsedSeconds(0);
@@ -1596,7 +1654,13 @@ export default function HomePage() {
     setStatusMessage(null);
     setElapsedSeconds(0);
     debateStartRef.current = null;
-    setCostSoFar({ usd: 0, tokens: 0, promptTokens: 0, cachedTokens: 0 });
+    setCostSoFar({
+      usd: 0,
+      tokens: 0,
+      promptTokens: 0,
+      cachedTokens: 0,
+      subscriptionCalls: 0,
+    });
     setShowDebateInResults(false);
     setVerdictExpanded(false);
   }, [viewState, turns.length, isRunning]);
@@ -1743,7 +1807,7 @@ export default function HomePage() {
     if (costSoFar.usd > 0 || costSoFar.tokens > 0) {
       lines.push("## Cost");
       lines.push(
-        `Total: ${formatUsd(costSoFar.usd)} · ${formatTokenCount(costSoFar.tokens)} tokens` +
+        `Total: ${formatSpend(costSoFar.usd, costSoFar.subscriptionCalls)} · ${formatTokenCount(costSoFar.tokens)} tokens` +
           (costSoFar.cachedTokens > 0
             ? ` (${formatTokenCount(costSoFar.cachedTokens)} cached)`
             : ""),
@@ -1976,6 +2040,8 @@ export default function HomePage() {
                 title={`Rough estimate: ${formatTokenCount(costEstimate.inputTokens)} input tokens, ${formatTokenCount(costEstimate.outputTokens)} output tokens across ${estimatedTurnCount} turns. Actual cost depends on response length and reasoning. Assumes prompt caching on repeat turns.`}
               >
                 Est. ~{formatUsd(costEstimate.totalUsd)}
+                {selectedModels.some((model) => model.billing === "subscription") &&
+                  " + subscription"}
               </span>
             </div>
             <button
@@ -2256,6 +2322,32 @@ export default function HomePage() {
                 </span>
               </div>
             </div>
+            <button
+              type="button"
+              onClick={() => setSelectedModelIds(presets.subscriptions)}
+              disabled={isRunning || presets.subscriptions.length === 0}
+              title={
+                presets.subscriptions.length === 0
+                  ? "Enable Claude Opus 5.5 (claude-cli) and GPT-6 Astra (codex-cli) in Settings"
+                  : SUBSCRIPTION_PRESET.description
+              }
+              className={`flex w-full items-center justify-between rounded-xl border px-3 py-2 text-left transition-colors ${
+                activePreset === "subscriptions"
+                  ? "border-violet-500 bg-violet-500/10"
+                  : "border-zinc-200 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:bg-zinc-900"
+              } disabled:cursor-not-allowed disabled:opacity-40`}
+            >
+              <span
+                className={`text-xs font-semibold ${
+                  activePreset === "subscriptions"
+                    ? "text-violet-700 dark:text-violet-300"
+                    : "text-zinc-700 dark:text-zinc-300"
+                }`}
+              >
+                {SUBSCRIPTION_PRESET.label}
+              </span>
+              <span className="text-[10px] text-zinc-500">subscriptions</span>
+            </button>
             <p className="text-[11px] text-zinc-500">
               Presets pick one model per provider by release date and price.
               Flagship is the newest top model, Balanced costs about a
@@ -2292,6 +2384,29 @@ export default function HomePage() {
             )}
             {models.length === 0 && !modelsError && (
               <p className="text-sm text-zinc-500">Loading models…</p>
+            )}
+            {subscriptionModelsByProvider.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-zinc-500">
+                  Subscription models{" "}
+                  <Link
+                    href="/settings"
+                    className="font-normal text-violet-600 hover:underline"
+                  >
+                    (manage)
+                  </Link>
+                </p>
+                <div className="space-y-3 rounded-xl border border-zinc-200 p-2 dark:border-zinc-800">
+                  {subscriptionModelsByProvider.map(([provider, providerModels]) => (
+                    <div key={provider} className="space-y-1">
+                      <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-zinc-400">
+                        {formatProviderName(provider)}
+                      </p>
+                      {providerModels.map((model) => renderModelCheckbox(model))}
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
             {topModels.length > 0 && (
               <div className="space-y-2">
@@ -2530,7 +2645,7 @@ export default function HomePage() {
                         </div>
                         <p className="text-xs text-zinc-500">
                           {formatModeLabel(mode)} · {rounds} round(s) ·{" "}
-                          {formatUsd(costSoFar.usd)} ·{" "}
+                          {formatSpend(costSoFar.usd, costSoFar.subscriptionCalls)} ·{" "}
                           {formatTokenCount(costSoFar.tokens)} tokens
                           {cachedPercent > 0 && (
                             <span className="text-zinc-400">
@@ -2728,7 +2843,7 @@ export default function HomePage() {
                   <div className="flex items-center gap-3">
                     {(costSoFar.usd > 0 || costSoFar.tokens > 0) && (
                       <span className="text-xs text-zinc-500">
-                        {formatUsd(costSoFar.usd)} ·{" "}
+                        {formatSpend(costSoFar.usd, costSoFar.subscriptionCalls)} ·{" "}
                         {formatTokenCount(costSoFar.tokens)} tokens
                         {cachedPercent > 0 && (
                           <span className="text-zinc-400">

@@ -1,6 +1,8 @@
 import { AsyncQueue } from "./async-queue";
-import { listDebateModels } from "./models";
-import { streamChatCompletion } from "./openrouter";
+import { OPENROUTER_PROVIDER_ID } from "./providers/model-id";
+import { MISSING_OPENROUTER_KEY_MESSAGE } from "./providers/openrouter";
+import { getRegistry, type ProviderRegistry } from "./providers/registry";
+import { collectStream } from "./providers/types";
 import { buildSummaryMessages } from "./prompts";
 import type {
   DebateStreamEvent,
@@ -185,15 +187,17 @@ function parseTakeaways(
 
 export async function* runSummary(
   request: SummarizeRequest,
-  options?: { apiKey?: string; signal?: AbortSignal },
+  options?: { apiKey?: string; signal?: AbortSignal; registry?: ProviderRegistry },
 ): AsyncGenerator<DebateStreamEvent> {
   const apiKey = options?.apiKey;
+  const registry = options?.registry ?? getRegistry();
+  const providerIds = registry.providerIdsFor([request.modelId ?? ""]);
 
-  if (!apiKey) {
+  // Only OpenRouter needs a key; a subscription CLI summarizer runs without one.
+  if (!apiKey && providerIds.includes(OPENROUTER_PROVIDER_ID)) {
     yield {
       type: "summary_error",
-      message:
-        "No OpenRouter API key. Add one on the Settings page or set OPENROUTER_API_KEY in .env.local.",
+      message: MISSING_OPENROUTER_KEY_MESSAGE,
     };
     return;
   }
@@ -214,7 +218,10 @@ export async function* runSummary(
     return;
   }
 
-  const { models } = await listDebateModels(apiKey);
+  const { models } = await registry.listModels(
+    { openRouterApiKey: apiKey },
+    { providerIds },
+  );
   const modelInfo = models.find((model) => model.id === request.modelId);
   const modelDisplayName = modelInfo?.displayName ?? request.modelId;
 
@@ -243,18 +250,24 @@ export async function* runSummary(
   const queue = new AsyncQueue<DebateStreamEvent>();
   let finalResult: { text: string; usage: TokenUsage | null } | null = null;
 
-  void streamChatCompletion({
-    apiKey,
-    model: request.modelId,
-    messages,
-    reasoningEffort: request.reasoningEffort,
-    supportsReasoningEffort: modelInfo?.supportsReasoningEffort ?? false,
-    responseFormatJson: modelInfo?.supportsJsonResponse ?? false,
-    signal: options?.signal,
-    onToken: (text) => {
-      queue.push({ type: "summary_token", text });
+  void collectStream(
+    registry.stream(
+      request.modelId,
+      {
+        messages,
+        reasoningEffort: request.reasoningEffort,
+        modelInfo,
+        responseFormatJson: modelInfo?.supportsJsonResponse ?? false,
+        signal: options?.signal,
+      },
+      { openRouterApiKey: apiKey },
+    ),
+    {
+      onToken: (text) => {
+        queue.push({ type: "summary_token", text });
+      },
     },
-  }).then(
+  ).then(
     (value) => {
       finalResult = value;
       queue.close();
