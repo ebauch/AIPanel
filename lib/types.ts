@@ -1,13 +1,22 @@
-export type DebateMode =
-  | "conversation"
-  | "assigned_stances"
-  | "randomized_stances";
+// Runtime lists behind the form's union types, so the MCP tool schema
+// (lib/debate-settings.ts) is generated from the same source as the form.
+export const DEBATE_MODES = [
+  "conversation",
+  "assigned_stances",
+  "randomized_stances",
+] as const;
 
-export type ReasoningEffort = "normal" | "high";
+export type DebateMode = (typeof DEBATE_MODES)[number];
+
+export const REASONING_EFFORTS = ["normal", "high"] as const;
+
+export type ReasoningEffort = (typeof REASONING_EFFORTS)[number];
 
 export interface LabeledDocument {
   label: string;
   content: string;
+  /** Where the text came from (file path, URL, PDF filename); kept in saved debates. */
+  source?: string;
 }
 
 export interface PdfExtractionResult {
@@ -147,6 +156,8 @@ export interface TranscriptMessage {
 }
 
 export type DebateStreamEvent =
+  /** Emitted by the API routes (not runDebate): the server-side record this run is saved to. */
+  | { type: "debate_saved"; id: string }
   | { type: "debate_start"; totalIterations: number; rounds: number }
   | {
       type: "iteration_start";

@@ -2,23 +2,26 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import type {
-  DebateConfig,
-  DebateMode,
-  DebateModelInfo,
-  DebateStreamEvent,
-  Disagreement,
-  PdfExtractionResult,
-  ReasoningEffort,
-  Stance,
-  Takeaway,
-  Takeaways,
-  TokenUsage,
-  TranscriptMessage,
-  UrlFetchResult,
+import {
+  DEBATE_MODES,
+  REASONING_EFFORTS,
+  type DebateConfig,
+  type DebateMode,
+  type DebateModelInfo,
+  type DebateStreamEvent,
+  type Disagreement,
+  type PdfExtractionResult,
+  type ReasoningEffort,
+  type Stance,
+  type Takeaway,
+  type Takeaways,
+  type TokenUsage,
+  type TranscriptMessage,
+  type UrlFetchResult,
 } from "@/lib/types";
+import { DEFAULT_DEBATE_SETTINGS, ROUNDS_RANGE, ITERATIONS_RANGE } from "@/lib/debate-settings";
 import { readPromptOverrides } from "@/lib/prompt-store";
-import { pickDefaultSummaryModel } from "@/lib/summary-utils";
+import { isBackedByWholePanel, pickDefaultSummaryModel } from "@/lib/summary-utils";
 import {
   buildPresets,
   detectPreset,
@@ -35,6 +38,8 @@ import {
   formatUsd,
 } from "@/lib/cost";
 import type { DebateExample, ExamplesIndex } from "@/lib/examples";
+import type { DebateListItem } from "@/lib/debate-record";
+import { RECENTS_LIMIT, selectRecents, type RecentCard } from "@/lib/recents";
 import { Markdown } from "@/app/components/Markdown";
 
 type SourceMeta =
@@ -294,6 +299,14 @@ function turnsToTranscript(turns: TurnBlock[]): TranscriptMessage[] {
     }));
 }
 
+/** Kept with a saved debate's document reference. */
+function documentSource(sourceMeta: SourceMeta): string | undefined {
+  if (!sourceMeta) {
+    return undefined;
+  }
+  return sourceMeta.kind === "pdf" ? `PDF: ${sourceMeta.filename}` : sourceMeta.url;
+}
+
 function sourceKindLabel(sourceMeta: SourceMeta): string {
   if (!sourceMeta) {
     return "pasted text";
@@ -315,15 +328,7 @@ function exportFilename(): string {
   return `ai-panel-debate-${date}-${time}.md`;
 }
 
-function isFullyAgreed(takeaway: Takeaway, panel: PanelEntry[]): boolean {
-  if (panel.length === 0) {
-    return false;
-  }
-  return (
-    panel.every((p) => takeaway.supporters.includes(p.modelDisplayName)) &&
-    takeaway.dissenters.length === 0
-  );
-}
+const isFullyAgreed = isBackedByWholePanel;
 
 function PanelChip({ entry }: { entry: PanelEntry }) {
   const colors = stanceColor(entry.stance, 0);
@@ -537,16 +542,19 @@ export default function HomePage() {
   const [models, setModels] = useState<DebateModelInfo[]>([]);
   const [modelsError, setModelsError] = useState<string | null>(null);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
-  const [mode, setMode] = useState<DebateMode>("assigned_stances");
-  const [reasoningEffort, setReasoningEffort] =
-    useState<ReasoningEffort>("high");
-  const [rounds, setRounds] = useState(3);
-  const [iterations, setIterations] = useState(3);
-  const [stances, setStances] = useState<Stance[]>(
-    DEFAULT_STANCES.map((stance) => ({ ...stance })),
+  const [mode, setMode] = useState<DebateMode>(DEFAULT_DEBATE_SETTINGS.mode);
+  const [reasoningEffort, setReasoningEffort] = useState<ReasoningEffort>(
+    DEFAULT_DEBATE_SETTINGS.reasoningEffort,
   );
-  const [summarizeEnabled, setSummarizeEnabled] = useState(true);
-  const [speakerMemory, setSpeakerMemory] = useState(true);
+  const [rounds, setRounds] = useState(DEFAULT_DEBATE_SETTINGS.rounds);
+  const [iterations, setIterations] = useState(DEFAULT_DEBATE_SETTINGS.iterations);
+  const [stances, setStances] = useState<Stance[]>(
+    DEFAULT_DEBATE_SETTINGS.stances.map((stance) => ({ ...stance })),
+  );
+  const [summarizeEnabled, setSummarizeEnabled] = useState(DEFAULT_DEBATE_SETTINGS.summarize);
+  const [speakerMemory, setSpeakerMemory] = useState(DEFAULT_DEBATE_SETTINGS.speakerMemory);
+  /** Server-side record of the current run (Recent debates). */
+  const [savedDebateId, setSavedDebateId] = useState<string | null>(null);
   const [summaryModelId, setSummaryModelId] = useState("");
   const [summaryText, setSummaryText] = useState("");
   const [takeaways, setTakeaways] = useState<Takeaways | null>(null);
@@ -567,6 +575,8 @@ export default function HomePage() {
   );
   const [examples, setExamples] = useState<DebateExample[]>([]);
   const [loadingExampleId, setLoadingExampleId] = useState<string | null>(null);
+  /** Saved debates shown instead of the examples; null = none saved or no store. */
+  const [recents, setRecents] = useState<RecentCard[] | null>(null);
   const [exportKind, setExportKind] = useState<
     "transcript" | "summary" | "both"
   >("both");
@@ -603,6 +613,7 @@ export default function HomePage() {
   const transcriptRef = useRef<HTMLDivElement>(null);
   const debateStartRef = useRef<number | null>(null);
   const panelRosterRef = useRef<PanelEntry[]>([]);
+  const savedDebateIdRef = useRef<string | null>(null);
 
   const loadModels = useCallback(() => {
     void fetch("/api/models", { headers: apiHeaders() })
@@ -654,6 +665,14 @@ export default function HomePage() {
     summaryModelId || pickDefaultSummaryModel(models, selectedModelIds);
 
   const isRunning = status === "loading" || status === "running";
+
+  // Refresh after a run starts or ends so the new debate and its status show up.
+  useEffect(() => {
+    void fetch(`/api/debates?limit=${RECENTS_LIMIT}`, { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { debates?: DebateListItem[] } | null) => setRecents(selectRecents(data?.debates)))
+      .catch(() => setRecents(null));
+  }, [savedDebateId, isRunning]);
   const isSummaryRunning =
     summaryStatus === "loading" || summaryStatus === "streaming";
 
@@ -1231,6 +1250,7 @@ export default function HomePage() {
         reasoningEffort,
         promptOverrides: readPromptOverrides(),
         panel,
+        debateId: savedDebateIdRef.current ?? undefined,
       };
 
       try {
@@ -1303,6 +1323,10 @@ export default function HomePage() {
   const handleStreamEvent = useCallback(
     (event: DebateStreamEvent) => {
       switch (event.type) {
+      case "debate_saved":
+        savedDebateIdRef.current = event.id;
+        setSavedDebateId(event.id);
+        break;
       case "debate_start":
         setStatus("running");
         setStatusMessage(
@@ -1482,6 +1506,8 @@ export default function HomePage() {
 
     setTurns([]);
     turnsRef.current = [];
+    setSavedDebateId(null);
+    savedDebateIdRef.current = null;
     setSummaryText("");
     setTakeaways(null);
     setSummaryError(null);
@@ -1513,6 +1539,7 @@ export default function HomePage() {
         .map((doc) => ({
           label: doc.label.trim() || "Untitled document",
           content: doc.content,
+          source: documentSource(doc.sourceMeta),
         })),
       modelIds: selectedModelIds,
       mode,
@@ -1632,13 +1659,15 @@ export default function HomePage() {
 
     setContextBrief("");
     setDocuments(INITIAL_DOCUMENTS.map((doc) => ({ ...doc })));
-    setStances(DEFAULT_STANCES.map((stance) => ({ ...stance })));
-    setMode("assigned_stances");
-    setReasoningEffort("high");
-    setRounds(3);
-    setIterations(3);
-    setSummarizeEnabled(true);
-    setSpeakerMemory(true);
+    setStances(DEFAULT_DEBATE_SETTINGS.stances.map((stance) => ({ ...stance })));
+    setMode(DEFAULT_DEBATE_SETTINGS.mode);
+    setReasoningEffort(DEFAULT_DEBATE_SETTINGS.reasoningEffort);
+    setRounds(DEFAULT_DEBATE_SETTINGS.rounds);
+    setIterations(DEFAULT_DEBATE_SETTINGS.iterations);
+    setSummarizeEnabled(DEFAULT_DEBATE_SETTINGS.summarize);
+    setSpeakerMemory(DEFAULT_DEBATE_SETTINGS.speakerMemory);
+    setSavedDebateId(null);
+    savedDebateIdRef.current = null;
     setSummaryModelId("");
     setTurns([]);
     turnsRef.current = [];
@@ -1969,7 +1998,47 @@ export default function HomePage() {
         </p>
       </header>
 
-      {examples.length > 0 && (
+      {savedDebateId && viewState !== "setup" && (
+        <p className="-mt-4 text-sm text-zinc-500">
+          Saved to{" "}
+          <Link
+            href={`/debates/${savedDebateId}`}
+            className="font-medium text-violet-600 hover:underline"
+          >
+            Recent debates
+          </Link>
+          {" "}— reopen it there to add a follow-up or run more rounds.
+        </p>
+      )}
+
+      {recents ? (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              Recents
+            </h2>
+            <Link href="/debates" className="text-xs font-medium text-violet-600 hover:underline">
+              All debates →
+            </Link>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {recents.map((recent) => (
+              <Link
+                key={recent.id}
+                href={recent.href}
+                className="min-w-0 rounded-xl border border-zinc-200 bg-white p-4 text-left text-sm hover:border-violet-300 hover:bg-violet-50/40 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-violet-800 dark:hover:bg-violet-950/20"
+              >
+                <span className="block truncate font-medium text-zinc-900 dark:text-zinc-50" title={recent.title}>
+                  {recent.title}
+                </span>
+                <span className="mt-1 block truncate text-xs text-zinc-500">
+                  {recent.subline}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : examples.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
             Examples
@@ -2447,9 +2516,11 @@ export default function HomePage() {
                 disabled={isRunning}
                 className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
               >
-                <option value="conversation">Conversation</option>
-                <option value="assigned_stances">Assigned stances</option>
-                <option value="randomized_stances">Randomized stances</option>
+                {DEBATE_MODES.map((option) => (
+                  <option key={option} value={option}>
+                    {formatModeLabel(option)}
+                  </option>
+                ))}
               </select>
             </div>
             {selectedModelsSupportReasoning && (
@@ -2463,8 +2534,11 @@ export default function HomePage() {
                   disabled={isRunning}
                   className="w-full rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
                 >
-                  <option value="normal">Normal</option>
-                  <option value="high">High</option>
+                  {REASONING_EFFORTS.map((option) => (
+                    <option key={option} value={option}>
+                      {option === "normal" ? "Normal" : "High"}
+                    </option>
+                  ))}
                 </select>
               </div>
             )}
@@ -2472,8 +2546,8 @@ export default function HomePage() {
               <label className="text-sm font-medium">Rounds</label>
               <input
                 type="number"
-                min={1}
-                max={10}
+                min={ROUNDS_RANGE.min}
+                max={ROUNDS_RANGE.max}
                 value={rounds}
                 onChange={(event) => setRounds(Number(event.target.value))}
                 disabled={isRunning}
@@ -2485,8 +2559,8 @@ export default function HomePage() {
                 <label className="text-sm font-medium">Iterations</label>
                 <input
                   type="number"
-                  min={1}
-                  max={10}
+                  min={ITERATIONS_RANGE.min}
+                  max={ITERATIONS_RANGE.max}
                   value={iterations}
                   onChange={(event) => setIterations(Number(event.target.value))}
                   disabled={isRunning}

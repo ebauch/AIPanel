@@ -1,4 +1,6 @@
 import { resolveApiKey } from "@/lib/openrouter";
+import { recordSummary } from "@/lib/debate-runner";
+import { getDebateStore, isDebateId } from "@/lib/debate-store";
 import { runSummary } from "@/lib/summarize";
 import type { SummarizeRequest } from "@/lib/types";
 
@@ -10,10 +12,11 @@ function encodeSse(event: unknown): Uint8Array {
 }
 
 export async function POST(request: Request) {
-  let body: SummarizeRequest;
+  // debateId: the saved debate (from the debate_saved event) to attach the summary to.
+  let body: SummarizeRequest & { debateId?: string };
 
   try {
-    body = (await request.json()) as SummarizeRequest;
+    body = (await request.json()) as SummarizeRequest & { debateId?: string };
   } catch {
     return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
       status: 400,
@@ -26,10 +29,12 @@ export async function POST(request: Request) {
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        for await (const event of runSummary(body, {
-          apiKey,
-          signal: request.signal,
-        })) {
+        const summary = runSummary(body, { apiKey, signal: request.signal });
+        const events =
+          typeof body.debateId === "string" && isDebateId(body.debateId)
+            ? recordSummary(getDebateStore(), body.debateId, summary, body.modelId)
+            : summary;
+        for await (const event of events) {
           controller.enqueue(encodeSse(event));
         }
       } catch (err) {
