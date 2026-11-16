@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "test": "node --import tsx --test \"test/**/*.test.ts\"",
     "build:examples": "node scripts/build-example-pdfs.mjs"
   },
   "dependencies": {
@@ -27,6 +28,7 @@
     "eslint-config-next": "16.2.9",
     "pdf-lib": "^1.17.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }

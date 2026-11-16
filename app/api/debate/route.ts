@@ -1,5 +1,6 @@
 import { runDebate } from "@/lib/debate";
 import { OpenRouterError, resolveApiKey } from "@/lib/openrouter";
+import { ProviderError } from "@/lib/providers/types";
 import type { DebateConfig } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -35,7 +36,10 @@ export async function POST(request: Request) {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Unexpected server error";
-        const retryable = err instanceof OpenRouterError ? err.retryable : false;
+        const retryable =
+          err instanceof OpenRouterError || err instanceof ProviderError
+            ? err.retryable
+            : false;
         controller.enqueue(encodeSse({ type: "error", message, retryable }));
       } finally {
         controller.close();
