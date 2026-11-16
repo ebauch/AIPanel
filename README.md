@@ -89,7 +89,9 @@ app/
   api/settings/models/    # GET/PUT enabled models (server-side JSON file)
   api/fetch-url/route.ts  # POST a URL, get back extracted text
   api/extract-pdf/route.ts# POST a PDF, get back extracted text
+  api/debates/            # GET list; GET/PATCH/DELETE [id]; POST [id]/continue (SSE)
   page.tsx                # Debate form + live transcript + results UI
+  debates/                # Recent debates list + one debate (read, continue, rename, delete)
   components/Markdown.tsx # Shared markdown renderer (react-markdown + remark-gfm)
   settings/page.tsx       # API key + prompt template editor
 lib/
@@ -97,6 +99,10 @@ lib/
   summarize.ts            # Takeaways generation (JSON parsing, validation)
   openrouter.ts           # OpenRouter HTTP client (streaming chat completions)
   providers/              # Provider interface + registry: openrouter, claude-cli, codex-cli
+  debate-store.ts         # Saved debates: one JSON (+ .md transcript) per debate in data/debates
+  debate-runner.ts        # Records runs into the store; continue = follow-up + more rounds
+  debate-settings.ts      # Form defaults + the MCP tool schema, from the same declarations
+  extract.ts              # PDF / URL / local file text extraction
   model-settings.ts       # Enabled-models store (validation, JSON file)
   models.ts               # Model catalog: filtering, recommended flagships
   presets.ts               # Flagship/Balanced/Budget panel presets
@@ -105,6 +111,10 @@ lib/
   cost.ts                  # Token/cost estimation
   examples.ts              # Example debate type
   types.ts                 # Shared config, takeaways, and stream event types
+mcp/
+  server.ts               # stdio MCP server (run with tsx)
+  tools.ts                # debate, continue_debate, list_debates, list_models
+skills/debate/SKILL.md    # /debate skill for Claude Code
 ```
 
 ## Defaults
@@ -155,6 +165,63 @@ by a Claude Max / ChatGPT Pro subscription instead of per token. Model ids are
   "subscription" rather than a dollar amount.
 - The app has no login: anyone who can reach it can start debates and test
   calls on your subscriptions. Keep it on localhost or a trusted network.
+
+## Saved debates
+
+Every debate is saved on the server as it runs, whether it was started from
+the web form or from Claude Code: one JSON file per debate in
+`data/debates/` (gitignored, under `AIPANEL_DATA_DIR`), rewritten atomically
+after every turn, plus a markdown transcript next to it. Document text is
+stored once per content hash in `data/debates/docs/`; the debate keeps the
+reference (path, URL or PDF name, hash, length). A debate whose server died
+mid-run shows as **stopped** and can still be continued.
+
+**Recent** (top nav, `/debates`) lists the latest 50, newest first, with
+**Load more**. Open one to read the transcript and takeaways, rename or
+delete it, or **Continue**: add a follow-up question and/or run more rounds
+with the same panel and settings. Every model gets the whole debate so far
+as context, the new turns are appended to the same debate, and the takeaways
+are re-summarized at the end. Nothing is deleted automatically.
+
+## Use from Claude Code (MCP server + `/debate` skill)
+
+`mcp/server.ts` is a stdio MCP server that imports the app's `lib/` directly,
+so it works whether or not the web app is running. It reads the repo's
+`.env.local` and `data/` dir regardless of the directory it is started from.
+
+Tools:
+
+- `debate` — `{ question, context?, documents?, preset?, models?, ...every
+  web-form setting }`, all optional except the question. Explicit arguments
+  win over the preset (which picks the panel), which wins over the app's
+  defaults; the default preset is "Opus 5.5 vs Astra (subscriptions)".
+  `documents` are local file paths (PDF or text) or http(s) URLs. Returns the
+  verdict, the to-dos every model backed, open disagreements, each model's
+  stance, the cost, the transcript path and the debate id. Sends a progress
+  notification per round; stops after 30 minutes (what ran is kept). One
+  debate runs at a time; a second call waits.
+- `continue_debate` — `{ id, followup?, rounds? }` on a saved debate.
+- `list_debates` — `{ limit? }`, newest first.
+- `list_models` — enabled models, presets, and the defaults a debate uses.
+
+Register it once (user scope), with absolute paths:
+
+```bash
+claude mcp add --scope user aipanel -- "$(which node)" \
+  /path/to/AIPanel/node_modules/.bin/tsx /path/to/AIPanel/mcp/server.ts
+```
+
+Install the skill by linking (or copying) it into your Claude skills:
+
+```bash
+ln -s /path/to/AIPanel/skills/debate ~/.claude/skills/debate
+```
+
+Then `/debate <topic>` in Claude Code. A debate takes minutes, longer than
+Claude Code's default MCP tool timeout, so raise it above the longest debate
+you expect (the tool stops itself at 30 minutes), e.g.
+`export MCP_TOOL_TIMEOUT=2000000` (milliseconds) in the shell that starts
+`claude`.
 
 ## Memory, rate limits, and failed turns
 
@@ -213,4 +280,3 @@ error if no key is configured (env var or saved in the browser).
   from several minutes to about one.
 - **Response length setting.** Short, medium, and long targets so turns are
   faster to produce and easier to read.
-- **Debate history.** Save finished debates locally and reopen them.
